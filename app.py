@@ -17,8 +17,8 @@ try:
 except Exception:
     st.error(
         "Secrets ontbreken of heten anders. Verwacht:\n"
-        'HOST_USER = "..."  \n'
-        'HOST_PASS = "..."  \n'
+        'HOST_USER = "Christoff"  \n'
+        'HOST_PASS = "29076"  \n'
         'DATA_BASE_URL = "https://otgent.borolo.be/data/"\n'
         'Optioneel: FILE_SUFFIX = "_steekkaart.xlsx"'
     )
