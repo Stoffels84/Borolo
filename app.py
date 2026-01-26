@@ -6,11 +6,22 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
+from requests.auth import HTTPBasicAuth
 
 st.set_page_config(page_title="Steekkaart", page_icon="🚌", layout="centered")
 
-# ✅ NIEUWE MAP
-BASE_URL = "https://otgent.borolo.be/data/"
+# ---------------- Secrets (zoals in jouw screenshot) ----------------
+try:
+    BASE_URL = st.secrets["DATA_BASE_URL"].rstrip("/") + "/"
+    AUTH = HTTPBasicAuth(st.secrets["HOST_USER"], st.secrets["HOST_PASS"])
+except Exception:
+    st.error(
+        "Secrets ontbreken of heten anders. Verwacht in Streamlit Secrets:\n"
+        'HOST_USER = "Christoff"  \n'
+        'HOST_PASS = "29076"  \n'
+        'DATA_BASE_URL = "https://otgent.borolo.be/data/"'
+    )
+    st.stop()
 
 # Herkent 8 cijfers ergens in bestandsnaam: jjjjmmdd
 DATE_PREFIX_RE = re.compile(r"(\d{8})")
@@ -27,23 +38,19 @@ def list_xlsx_files() -> list[str]:
     Haalt de HTML directory listing op en extraheert .xlsx links.
     Dit werkt enkel als de server de mapinhoud toont.
     """
-    r = requests.get(BASE_URL, timeout=20)
+    r = requests.get(BASE_URL, auth=AUTH, timeout=20)
     r.raise_for_status()
 
     html = r.text
-
-    # Pak alle href="...xlsx"
     links = re.findall(r'href="([^"]+\.xlsx)"', html, flags=re.IGNORECASE)
 
-    # Normaliseer naar enkel bestandsnaam
+    # normaliseer naar enkel bestandsnaam
     files = [link.split("/")[-1] for link in links]
     return sorted(set(files))
 
 
 def pick_file_for_today(files: list[str]) -> str | None:
-    """
-    Kiest het bestand met datum (jjjjmmdd) dat het meest recent is <= vandaag.
-    """
+    """Kiest het meest recente bestand met datum (jjjjmmdd) <= vandaag."""
     today = brussels_today()
 
     candidates: list[tuple[date, str]] = []
@@ -70,7 +77,7 @@ def pick_file_for_today(files: list[str]) -> str | None:
 @st.cache_data(ttl=300)
 def fetch_excel_as_df(filename: str) -> pd.DataFrame:
     url = BASE_URL + filename
-    r = requests.get(url, timeout=30)
+    r = requests.get(url, auth=AUTH, timeout=30)
     r.raise_for_status()
     return pd.read_excel(BytesIO(r.content))
 
@@ -85,7 +92,6 @@ def guess_column(df: pd.DataFrame, keywords: list[str]) -> str | None:
 
 
 # ---------------- UI ----------------
-
 st.title("🚌 Steekkaart")
 st.caption("Vul je personeelsnummer in en bekijk je dienst en voertuig.")
 
@@ -94,10 +100,12 @@ with st.spinner("Bestanden ophalen…"):
         files = list_xlsx_files()
     except Exception:
         st.error(
-            "Ik kan de map niet uitlezen. Waarschijnlijk staat directory listing uit op de server.\n\n"
-            "✅ Beste oplossing: laat een vast bestand maken zoals `latest.txt` in dezelfde map,\n"
-            "met daarin de actuele bestandsnaam (bv. `20260126_steekkaart.xlsx`).\n"
-            "Dan passen we de app aan om `latest.txt` te lezen i.p.v. HTML scrapen."
+            "Ik kan de map niet uitlezen.\n\n"
+            "Mogelijke oorzaken:\n"
+            "- Directory listing staat uit op de server\n"
+            "- Basic Auth is fout (HOST_USER/HOST_PASS)\n"
+            "- DATA_BASE_URL klopt niet\n\n"
+            "Robuuste oplossing: zet een `latest.txt` in dezelfde map met de bestandsnaam."
         )
         st.stop()
 
