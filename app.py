@@ -1,4 +1,3 @@
-import re
 from io import BytesIO
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
@@ -10,76 +9,52 @@ from requests.auth import HTTPBasicAuth
 
 st.set_page_config(page_title="Steekkaart", page_icon="🚌", layout="centered")
 
-# ---------------- Secrets (zoals in jouw screenshot) ----------------
+# ---------------- Secrets ----------------
 try:
     BASE_URL = st.secrets["DATA_BASE_URL"].rstrip("/") + "/"
     AUTH = HTTPBasicAuth(st.secrets["HOST_USER"], st.secrets["HOST_PASS"])
+    FILE_SUFFIX = st.secrets.get("FILE_SUFFIX", "").strip()
 except Exception:
     st.error(
-        "Secrets ontbreken of heten anders. Verwacht in Streamlit Secrets:\n"
-        'HOST_USER = "Christoff"  \n'
-        'HOST_PASS = "29076"  \n'
-        'DATA_BASE_URL = "https://otgent.borolo.be/data/"'
+        "Secrets ontbreken of heten anders. Verwacht:\n"
+        'HOST_USER = "..."  \n'
+        'HOST_PASS = "..."  \n'
+        'DATA_BASE_URL = "https://otgent.borolo.be/data/"\n'
+        'Optioneel: FILE_SUFFIX = "_steekkaart.xlsx"'
     )
     st.stop()
 
-# Herkent 8 cijfers ergens in bestandsnaam: jjjjmmdd
-DATE_PREFIX_RE = re.compile(r"(\d{8})")
+if not FILE_SUFFIX:
+    st.error(
+        "FILE_SUFFIX ontbreekt.\n\n"
+        "Voeg in Secrets toe:\n"
+        'FILE_SUFFIX = "_steekkaart.xlsx"\n\n'
+        "Voorbeeld bestandsnaam: 20260126_steekkaart.xlsx"
+    )
+    st.stop()
 
 
-def brussels_today() -> date:
-    """Pak 'vandaag' in Europe/Brussels."""
-    return datetime.now(ZoneInfo("Europe/Brussels")).date()
+def brussels_yyyymmdd() -> str:
+    return datetime.now(ZoneInfo("Europe/Brussels")).strftime("%Y%m%d")
 
 
-@st.cache_data(ttl=300)
-def list_xlsx_files() -> list[str]:
+@st.cache_data(ttl=60)
+def fetch_excel_for_today() -> tuple[str, pd.DataFrame]:
     """
-    Haalt de HTML directory listing op en extraheert .xlsx links.
-    Dit werkt enkel als de server de mapinhoud toont.
+    Verwacht bestandsnaam: YYYYMMDD + FILE_SUFFIX
+    vb: 20260126 + _steekkaart.xlsx => 20260126_steekkaart.xlsx
     """
-    r = requests.get(BASE_URL, auth=AUTH, timeout=20)
-    r.raise_for_status()
-
-    html = r.text
-    links = re.findall(r'href="([^"]+\.xlsx)"', html, flags=re.IGNORECASE)
-
-    # normaliseer naar enkel bestandsnaam
-    files = [link.split("/")[-1] for link in links]
-    return sorted(set(files))
-
-
-def pick_file_for_today(files: list[str]) -> str | None:
-    """Kiest het meest recente bestand met datum (jjjjmmdd) <= vandaag."""
-    today = brussels_today()
-
-    candidates: list[tuple[date, str]] = []
-    for fn in files:
-        m = DATE_PREFIX_RE.search(fn)
-        if not m:
-            continue
-        yyyymmdd = m.group(1)
-        try:
-            d = datetime.strptime(yyyymmdd, "%Y%m%d").date()
-        except ValueError:
-            continue
-
-        if d <= today:
-            candidates.append((d, fn))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda x: x[0])
-    return candidates[-1][1]
-
-
-@st.cache_data(ttl=300)
-def fetch_excel_as_df(filename: str) -> pd.DataFrame:
+    d = brussels_yyyymmdd()
+    filename = f"{d}{FILE_SUFFIX}"
     url = BASE_URL + filename
+
     r = requests.get(url, auth=AUTH, timeout=30)
+    if r.status_code == 404:
+        raise FileNotFoundError(f"Bestand niet gevonden: {filename}")
     r.raise_for_status()
-    return pd.read_excel(BytesIO(r.content))
+
+    df = pd.read_excel(BytesIO(r.content))
+    return filename, df
 
 
 def guess_column(df: pd.DataFrame, keywords: list[str]) -> str | None:
@@ -95,39 +70,22 @@ def guess_column(df: pd.DataFrame, keywords: list[str]) -> str | None:
 st.title("🚌 Steekkaart")
 st.caption("Vul je personeelsnummer in en bekijk je dienst en voertuig.")
 
-with st.spinner("Bestanden ophalen…"):
+today = brussels_yyyymmdd()
+st.info(f"Vandaag: **{today}** → verwacht bestand: **{today}{FILE_SUFFIX}**")
+
+with st.spinner("Excel van vandaag ophalen…"):
     try:
-        files = list_xlsx_files()
-    except Exception:
-        st.error(
-            "Ik kan de map niet uitlezen.\n\n"
-            "Mogelijke oorzaken:\n"
-            "- Directory listing staat uit op de server\n"
-            "- Basic Auth is fout (HOST_USER/HOST_PASS)\n"
-            "- DATA_BASE_URL klopt niet\n\n"
-            "Robuuste oplossing: zet een `latest.txt` in dezelfde map met de bestandsnaam."
-        )
+        chosen, df = fetch_excel_for_today()
+    except FileNotFoundError as e:
+        st.error(str(e))
         st.stop()
-
-if not files:
-    st.error("Geen .xlsx-bestanden gevonden in de map.")
-    st.stop()
-
-chosen = pick_file_for_today(files)
-if not chosen:
-    st.error("Geen geschikt .xlsx-bestand gevonden met datum (jjjjmmdd) in de naam (<= vandaag).")
-    st.stop()
+    except Exception as e:
+        st.error(f"Kon Excel niet ophalen/inlezen: {e}")
+        st.stop()
 
 st.success(f"Gekozen bestand: **{chosen}**")
 
-with st.spinner("Excel inlezen…"):
-    try:
-        df = fetch_excel_as_df(chosen)
-    except Exception as e:
-        st.error(f"Kon Excel niet inlezen: {e}")
-        st.stop()
-
-# Auto-detect kolommen (pas keywords aan als jouw headers anders zijn)
+# Auto-detect kolommen
 col_pers = guess_column(df, ["pers", "personeel", "persnr", "personeelsnr", "person"])
 col_dienst = guess_column(df, ["dienst", "shift", "ronde", "tour", "dienstcode"])
 col_voertuig = guess_column(df, ["voertuig", "bus", "tram", "vehicle", "wagen"])
@@ -136,7 +94,6 @@ with st.expander("⚙️ Kolommen (auto-detect)"):
     st.write("Personeelsnummer:", col_pers)
     st.write("Dienst:", col_dienst)
     st.write("Voertuig:", col_voertuig)
-    st.caption("Als dit fout zit: geef me je exacte kolomnamen, dan zet ik ze vast.")
 
 if not col_pers:
     st.error("Ik vind geen kolom voor personeelsnummer. Geef me je exacte kolomnaam (header in Excel).")
@@ -149,7 +106,7 @@ if persnr:
     match = df[s == persnr]
 
     if match.empty:
-        st.warning("Geen record gevonden voor dit personeelsnummer in het gekozen dagbestand.")
+        st.warning("Geen record gevonden voor dit personeelsnummer in het dagbestand.")
     else:
         row = match.iloc[0]
         dienst_val = row[col_dienst] if col_dienst else "(kolom 'dienst' niet gevonden)"
