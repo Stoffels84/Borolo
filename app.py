@@ -1,54 +1,52 @@
 import re
 from io import BytesIO
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
 import streamlit as st
-from requests.auth import HTTPBasicAuth
 
 st.set_page_config(page_title="Steekkaart", page_icon="🚌", layout="centered")
 
-BASE_URL = st.secrets["steekkaart"]["base_url"].rstrip("/") + "/"
-AUTH = HTTPBasicAuth(
-    st.secrets["steekkaart"]["username"],
-    st.secrets["steekkaart"]["password"],
-)
+# ✅ NIEUWE MAP
+BASE_URL = "https://otgent.borolo.be/data/"
 
-DATE_PREFIX_RE = re.compile(r"(\d{8})")  # jjjjmmdd ergens in bestandsnaam
+# Herkent 8 cijfers ergens in bestandsnaam: jjjjmmdd
+DATE_PREFIX_RE = re.compile(r"(\d{8})")
 
 
 def brussels_today() -> date:
-    # Streamlit draait niet altijd in BE timezone; we nemen "vandaag" op basis van datum-only
-    # (als je écht timezone-nauwkeurig wil: pytz/zoneinfo toevoegen)
-    return datetime.utcnow().date()  # meestal ok voor bestandskeuze per dag
+    """Pak 'vandaag' in Europe/Brussels."""
+    return datetime.now(ZoneInfo("Europe/Brussels")).date()
 
 
 @st.cache_data(ttl=300)
 def list_xlsx_files() -> list[str]:
     """
-    Probeert directory listing (HTML) op te halen via Basic Auth en haalt .xlsx links eruit.
-    Werkt als de server directory-indexing toont voor geauthenticeerde users.
+    Haalt de HTML directory listing op en extraheert .xlsx links.
+    Dit werkt enkel als de server de mapinhoud toont.
     """
-    r = requests.get(BASE_URL, auth=AUTH, timeout=20)
+    r = requests.get(BASE_URL, timeout=20)
     r.raise_for_status()
 
     html = r.text
+
     # Pak alle href="...xlsx"
     links = re.findall(r'href="([^"]+\.xlsx)"', html, flags=re.IGNORECASE)
-    # Normaliseer (sommige servers geven volledige padjes)
+
+    # Normaliseer naar enkel bestandsnaam
     files = [link.split("/")[-1] for link in links]
-    # uniek + sort
     return sorted(set(files))
 
 
 def pick_file_for_today(files: list[str]) -> str | None:
     """
-    Kiest het bestand met datumprefix jjjjmmdd dat het meest recent is <= vandaag.
+    Kiest het bestand met datum (jjjjmmdd) dat het meest recent is <= vandaag.
     """
     today = brussels_today()
 
-    candidates = []
+    candidates: list[tuple[date, str]] = []
     for fn in files:
         m = DATE_PREFIX_RE.search(fn)
         if not m:
@@ -58,6 +56,7 @@ def pick_file_for_today(files: list[str]) -> str | None:
             d = datetime.strptime(yyyymmdd, "%Y%m%d").date()
         except ValueError:
             continue
+
         if d <= today:
             candidates.append((d, fn))
 
@@ -71,11 +70,9 @@ def pick_file_for_today(files: list[str]) -> str | None:
 @st.cache_data(ttl=300)
 def fetch_excel_as_df(filename: str) -> pd.DataFrame:
     url = BASE_URL + filename
-    r = requests.get(url, auth=AUTH, timeout=30)
+    r = requests.get(url, timeout=30)
     r.raise_for_status()
-    bio = BytesIO(r.content)
-    df = pd.read_excel(bio)
-    return df
+    return pd.read_excel(BytesIO(r.content))
 
 
 def guess_column(df: pd.DataFrame, keywords: list[str]) -> str | None:
@@ -87,23 +84,30 @@ def guess_column(df: pd.DataFrame, keywords: list[str]) -> str | None:
     return None
 
 
+# ---------------- UI ----------------
+
 st.title("🚌 Steekkaart")
-st.caption("Vul je personeelsnummer in en bekijk je dienst en voertuig (zonder inloggen).")
+st.caption("Vul je personeelsnummer in en bekijk je dienst en voertuig.")
 
 with st.spinner("Bestanden ophalen…"):
     try:
         files = list_xlsx_files()
-    except Exception as e:
+    except Exception:
         st.error(
-            "Ik kan de map niet uitlezen (directory listing). "
-            "Als je hosting geen bestandslijst toont, is de oplossing: "
-            "maak een vast bestand zoals `latest.txt` dat de juiste bestandsnaam bevat."
+            "Ik kan de map niet uitlezen. Waarschijnlijk staat directory listing uit op de server.\n\n"
+            "✅ Beste oplossing: laat een vast bestand maken zoals `latest.txt` in dezelfde map,\n"
+            "met daarin de actuele bestandsnaam (bv. `20260126_steekkaart.xlsx`).\n"
+            "Dan passen we de app aan om `latest.txt` te lezen i.p.v. HTML scrapen."
         )
         st.stop()
 
+if not files:
+    st.error("Geen .xlsx-bestanden gevonden in de map.")
+    st.stop()
+
 chosen = pick_file_for_today(files)
 if not chosen:
-    st.error("Geen geschikt .xlsx-bestand gevonden met een jjjjmmdd prefix (<= vandaag).")
+    st.error("Geen geschikt .xlsx-bestand gevonden met datum (jjjjmmdd) in de naam (<= vandaag).")
     st.stop()
 
 st.success(f"Gekozen bestand: **{chosen}**")
@@ -115,7 +119,7 @@ with st.spinner("Excel inlezen…"):
         st.error(f"Kon Excel niet inlezen: {e}")
         st.stop()
 
-# Auto-detect kolommen (pas keywords aan aan jouw echte headers)
+# Auto-detect kolommen (pas keywords aan als jouw headers anders zijn)
 col_pers = guess_column(df, ["pers", "personeel", "persnr", "personeelsnr", "person"])
 col_dienst = guess_column(df, ["dienst", "shift", "ronde", "tour", "dienstcode"])
 col_voertuig = guess_column(df, ["voertuig", "bus", "tram", "vehicle", "wagen"])
@@ -124,16 +128,15 @@ with st.expander("⚙️ Kolommen (auto-detect)"):
     st.write("Personeelsnummer:", col_pers)
     st.write("Dienst:", col_dienst)
     st.write("Voertuig:", col_voertuig)
-    st.caption("Als auto-detect fout zit: zeg me even je exacte kolomnamen, dan zet ik ze vast.")
+    st.caption("Als dit fout zit: geef me je exacte kolomnamen, dan zet ik ze vast.")
 
 if not col_pers:
-    st.error("Ik vind geen kolom voor personeelsnummer. Geef me je exacte kolomnaam.")
+    st.error("Ik vind geen kolom voor personeelsnummer. Geef me je exacte kolomnaam (header in Excel).")
     st.stop()
 
 persnr = st.text_input("Personeelsnummer", placeholder="bv. 12345").strip()
 
 if persnr:
-    # Zorg dat we zowel numeriek als tekst matchen
     s = df[col_pers].astype(str).str.strip()
     match = df[s == persnr]
 
@@ -141,7 +144,6 @@ if persnr:
         st.warning("Geen record gevonden voor dit personeelsnummer in het gekozen dagbestand.")
     else:
         row = match.iloc[0]
-
         dienst_val = row[col_dienst] if col_dienst else "(kolom 'dienst' niet gevonden)"
         voertuig_val = row[col_voertuig] if col_voertuig else "(kolom 'voertuig' niet gevonden)"
 
@@ -150,4 +152,4 @@ if persnr:
         st.metric("Voertuig", str(voertuig_val))
 
         with st.expander("Bekijk volledige rij"):
-            st.dataframe(match)
+            st.dataframe(match, use_container_width=True)
