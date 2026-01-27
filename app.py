@@ -169,3 +169,62 @@ def main():
             "richting": "richting",
             "loop": "Loop",
             "naam": "naam",
+            "voertuig": "voertuig",
+            "wissel": "voertuigwissel",
+        }
+
+        # Map echte kolomnamen in Excel naar onze output
+        col_map: dict[str, str] = {}
+        missing: list[str] = []
+        for excel_name, out_name in wanted_cols.items():
+            found = _find_col(df_raw, excel_name)
+            if not found:
+                missing.append(excel_name)
+            else:
+                col_map[found] = out_name
+
+        if missing:
+            st.error(
+                "In tabblad 'Dienstlijst' ontbreken deze vereiste kolommen: "
+                + ", ".join(missing)
+            )
+            st.stop()
+
+        df = df_raw[list(col_map.keys())].rename(columns=col_map)
+
+        # Maak deze kolommen altijd proper (geen 38529.0, geen 6310.0, ...)
+        df["personeelnummer"] = clean_id_series(df["personeelnummer"])
+        df["voertuig"] = clean_id_series(df["voertuig"])
+        df["voertuigwissel"] = clean_id_series(df["voertuigwissel"])
+
+        # 1 zoekbalk: zoekt tegelijk in personeelnummer (exact) + voertuig (bevat) + voertuigwissel (bevat)
+        st.subheader("Zoeken")
+        q = st.text_input(
+            "Personeelnummer, voertuig of voertuigwissel",
+            placeholder="bv. 38529 of 6310",
+        )
+
+        if not q.strip():
+            st.info("Geef een personeelnummer of voertuig( wissel) in om resultaten te tonen.")
+            st.stop()
+
+        q_norm = clean_query(q)
+
+        # Series voor zoeken
+        pn = df["personeelnummer"].fillna("").astype(str)
+        veh = df["voertuig"].fillna("").astype(str)
+        swp = df["voertuigwissel"].fillna("").astype(str)
+
+        mask = (
+            (pn == q_norm)  # personeelnummer: exact
+            | (veh.str.contains(re.escape(q_norm), case=False, na=False))  # voertuig: bevat
+            | (swp.str.contains(re.escape(q_norm), case=False, na=False))  # voertuigwissel: bevat
+        )
+
+        results = df[mask].copy()
+
+        if results.empty:
+            st.warning(f"Geen resultaten gevonden voor: {q_norm}")
+            st.stop()
+
+        st.success(f"Gevonden: {len(results)} rij(en) voor: {q
