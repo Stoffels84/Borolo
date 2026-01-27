@@ -144,7 +144,7 @@ def main():
 
         # Verwachte kolommen (met wissel -> voertuigwissel in app)
         wanted_cols = {
-            "personeelsnummer": "personeelsnummer",
+            "personeelnummer": "personeelnummer",
             "dienstadres": "Dienstadres",
             "uur": "uur",
             "plaats": "plaats",
@@ -175,26 +175,26 @@ def main():
         # Werk-DF met alleen relevante kolommen en juiste namen
         df = df_raw[list(col_map.keys())].rename(columns=col_map)
 
-        # Zoekvenster (personeelsnummer)
-        st.subheader("Zoeken op personeelsnummer")
-        q = st.text_input("Personeelsnummer", placeholder="bv. 12345")
+        # Zoekvenster (personeelnummer)
+        st.subheader("Zoeken op personeelnummer")
+        q = st.text_input("Personeelnummer", placeholder="bv. 12345")
 
         # Niets tonen (screenshot 2 weg) tot er gezocht wordt
         if not q.strip():
-            st.info("Geef een personeelsnummer in om resultaten te tonen.")
+            st.info("Geef een personeelnummer in om resultaten te tonen.")
             st.stop()
 
         q_norm = q.strip()
 
         # Vergelijk als tekst (handig bij leading zeros)
-        pn_series = df["personeelsnummer"].astype(str).str.strip()
+        pn_series = df["personeelnummer"].astype(str).str.strip()
         results = df[pn_series == q_norm].copy()
 
         if results.empty:
-            st.warning(f"Geen resultaten gevonden voor personeelsnummer: {q_norm}")
+            st.warning(f"Geen resultaten gevonden voor personeelnummer: {q_norm}")
             st.stop()
 
-        st.success(f"Gevonden: {len(results)} rij(en) voor personeelsnummer {q_norm}")
+        st.success(f"Gevonden: {len(results)} rij(en) voor personeelnummer {q_norm}")
 
         # Toon resultaten
         st.dataframe(results, use_container_width=True, hide_index=True)
@@ -209,7 +209,7 @@ def main():
         st.download_button(
             "Download resultaat als Excel",
             data=out,
-            file_name=f"{safe_name}_personeelsnummer_{q_norm}.xlsx",
+            file_name=f"{safe_name}_personeelnummer_{q_norm}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
