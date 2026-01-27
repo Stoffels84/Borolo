@@ -7,7 +7,7 @@ from ftplib import FTP
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Steekkaart: bestand van vandaag", layout="wide")
+st.set_page_config(page_title="Opzoeken voertuig chauffeur", layout="wide")
 
 
 def extract_yyyymmdd(name: str):
@@ -120,7 +120,6 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
 def main():
     st.title("Opzoeken voertuig chauffeur")
 
-
     with st.sidebar:
         st.header("Instellingen")
         refresh = st.button("🔄 Herladen (cache leegmaken)")
@@ -172,33 +171,50 @@ def main():
 
         df = df_raw[list(col_map.keys())].rename(columns=col_map)
 
-        # Zorg dat personeelnummer altijd als tekst behandeld wordt
+        # Zorg dat personeelnummer en voertuig altijd als tekst behandeld worden
         df["personeelnummer"] = df["personeelnummer"].astype(str)
+        df["voertuig"] = df["voertuig"].astype(str)
 
-        st.subheader("Zoeken op personeelnummer")
-        q = st.text_input("Personeelnummer", placeholder="bv. 12345")
+        # Keuze: zoeken op personeelnummer of voertuig
+        search_mode = st.radio("Zoeken op", ["Personeelnummer", "Voertuig"], horizontal=True)
+
+        if search_mode == "Personeelnummer":
+            q = st.text_input("Personeelnummer", placeholder="bv. 12345")
+        else:
+            q = st.text_input("Voertuig", placeholder="bv. 6201 (of deel van de code)")
 
         if not q.strip():
-            st.info("Geef een personeelnummer in om resultaten te tonen.")
+            st.info("Geef een zoekwaarde in om resultaten te tonen.")
             st.stop()
 
         q_norm = q.strip()
 
-        pn_series = (
-            df["personeelnummer"]
-            .astype(str)
-            .str.replace("\u00a0", " ", regex=False)  # NBSP -> spatie
-            .str.strip()
-            .str.replace(r"\.0$", "", regex=True)     # 12345.0 -> 12345
-        )
-
-        results = df[pn_series == q_norm].copy()
+        if search_mode == "Personeelnummer":
+            pn_series = (
+                df["personeelnummer"]
+                .astype(str)
+                .str.replace("\u00a0", " ", regex=False)  # NBSP -> spatie
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)     # 12345.0 -> 12345
+            )
+            results = df[pn_series == q_norm].copy()
+            download_suffix = f"personeelnummer_{q_norm}"
+        else:
+            veh_series = (
+                df["voertuig"]
+                .astype(str)
+                .str.replace("\u00a0", " ", regex=False)
+                .str.strip()
+            )
+            # Zoeken op voertuig: case-insensitive "bevat" (handig als je maar een deel kent)
+            results = df[veh_series.str.contains(q_norm, case=False, na=False)].copy()
+            download_suffix = f"voertuig_{q_norm}"
 
         if results.empty:
-            st.warning(f"Geen resultaten gevonden voor personeelnummer: {q_norm}")
+            st.warning(f"Geen resultaten gevonden voor {search_mode.lower()}: {q_norm}")
             st.stop()
 
-        st.success(f"Gevonden: {len(results)} rij(en) voor personeelnummer {q_norm}")
+        st.success(f"Gevonden: {len(results)} rij(en) voor {search_mode.lower()} {q_norm}")
         st.dataframe(results, use_container_width=True, hide_index=True)
 
         out = BytesIO()
@@ -210,7 +226,7 @@ def main():
         st.download_button(
             "Download resultaat als Excel",
             data=out,
-            file_name=f"{safe_name}_personeelnummer_{q_norm}.xlsx",
+            file_name=f"{safe_name}_{download_suffix}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
