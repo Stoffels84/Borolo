@@ -104,7 +104,6 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
         try:
             df = pd.read_excel(bio, sheet_name="Dienstlijst")
         except ValueError:
-            # sheet bestaat niet
             raise RuntimeError("Tabblad 'Dienstlijst' niet gevonden in het Excel-bestand.")
 
         return chosen, file_date, df
@@ -175,11 +174,17 @@ def main():
         # Werk-DF met alleen relevante kolommen en juiste namen
         df = df_raw[list(col_map.keys())].rename(columns=col_map)
 
+        # -------------------------
+        # Optie 1: force personeelnummer als tekst (na het mappen)
+        # (helpt tegen 12345.0 en verlies van leading zeros)
+        # -------------------------
+        df["personeelnummer"] = df["personeelnummer"].astype(str)
+
         # Zoekvenster (personeelnummer)
         st.subheader("Zoeken op personeelnummer")
         q = st.text_input("Personeelnummer", placeholder="bv. 12345")
 
-        # Niets tonen (screenshot 2 weg) tot er gezocht wordt
+        # Niets tonen tot er gezocht wordt
         if not q.strip():
             st.info("Geef een personeelnummer in om resultaten te tonen.")
             st.stop()
@@ -187,7 +192,30 @@ def main():
         q_norm = q.strip()
 
         # Vergelijk als tekst (handig bij leading zeros)
-        pn_series = df["personeelnummer"].astype(str).str.strip()
+        # Extra fix: verwijder ".0" op het einde (typisch wanneer Excel als float werd ingelezen)
+        pn_series = (
+            df["personeelnummer"]
+            .astype(str)
+            .str.replace("\u00a0", " ", regex=False)          # NBSP -> spatie
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)             # 12345.0 -> 12345
+        )
+
+        # -------------------------
+        # Mini-check (debug): toont waarom het eventueel niet matcht
+        # -------------------------
+        st.caption("Mini-check (debug)")
+        st.write("Zoekterm (raw):", repr(q))
+        st.write("Zoekterm (norm):", repr(q_norm))
+        st.write(
+            "Eerste 20 personeelnummer waarden (raw):",
+            df["personeelnummer"].head(20).apply(lambda x: repr(x)).tolist(),
+        )
+        st.write(
+            "Eerste 20 personeelnummer waarden (norm):",
+            pn_series.head(20).apply(lambda x: repr(x)).tolist(),
+        )
+
         results = df[pn_series == q_norm].copy()
 
         if results.empty:
