@@ -7,15 +7,11 @@ from ftplib import FTP
 import pandas as pd
 import streamlit as st
 
-
 st.set_page_config(page_title="Steekkaart: bestand van vandaag", layout="wide")
 
 
 def extract_yyyymmdd(name: str):
-    """
-    Verwacht dat de bestandsnaam start met yyyymmdd, bv:
-    20260127_iets.xlsx
-    """
+    """Verwacht dat de bestandsnaam start met yyyymmdd, bv: 20260127_iets.xlsx"""
     m = re.match(r"^(\d{8})", name)
     if not m:
         return None
@@ -50,14 +46,27 @@ def choose_file(files: list[str], today: date) -> str | None:
     return max(candidates, key=lambda x: x[1])[0]
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", "", str(s)).strip().lower()
+
+
+def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
+    """Zoekt kolom op basis van 'genormaliseerde' naam (spaties/case negeren)."""
+    w = _norm(wanted)
+    for c in df.columns:
+        if _norm(c) == w:
+            return c
+    return None
+
+
 @st.cache_data(ttl=300)
-def load_excel_via_ftp() -> tuple[str, pd.DataFrame]:
+def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
     """
     Leest via FTP:
       - list bestanden in huidige map na login
       - kiest vandaag of meest recente
       - downloadt naar geheugen
-      - leest Excel met pandas
+      - leest Excel tabblad 'dienstlijst'
     Vereiste secrets:
       FTP_HOST, FTP_USER, FTP_PASS
     Optioneel:
@@ -75,11 +84,10 @@ def load_excel_via_ftp() -> tuple[str, pd.DataFrame]:
         ftp.connect(host=host, port=port, timeout=30)
         ftp.login(user=user, passwd=pw)
 
-        # Als je tóch een submap wil gebruiken, zet dan bv:
+        # Indien je in een submap moet zijn:
         # ftp.cwd("data")
 
         files = ftp.nlst()
-
         chosen = choose_file(files, today)
         if not chosen:
             raise RuntimeError(
@@ -90,8 +98,16 @@ def load_excel_via_ftp() -> tuple[str, pd.DataFrame]:
         ftp.retrbinary(f"RETR {chosen}", bio.write)
         bio.seek(0)
 
-        df = pd.read_excel(bio)  # openpyxl is vereist voor xlsx/xlsm
-        return chosen, df
+        file_date = extract_yyyymmdd(chosen)
+
+        # Lees enkel tabblad "dienstlijst"
+        try:
+            df = pd.read_excel(bio, sheet_name="dienstlijst")
+        except ValueError:
+            # sheet bestaat niet
+            raise RuntimeError("Tabblad 'dienstlijst' niet gevonden in het Excel-bestand.")
+
+        return chosen, file_date, df
 
     finally:
         try:
@@ -108,31 +124,92 @@ def main():
 
     with st.sidebar:
         st.header("Instellingen")
-        st.caption("Deze app kiest automatisch het Excel-bestand van vandaag (yyyymmdd...).")
         refresh = st.button("🔄 Herladen (cache leegmaken)")
+        st.caption("Bestand wordt automatisch gekozen op basis van datum (yyyymmdd...).")
 
     if refresh:
         st.cache_data.clear()
 
     try:
-        filename, df = load_excel_via_ftp()
-        file_date = extract_yyyymmdd(filename)
+        filename, file_date, df_raw = load_excel_via_ftp()
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Gekozen bestand", filename)
-        c2.metric("Bestandsdatum", file_date.isoformat() if file_date else "—")
-        c3.metric("Vandaag", date.today().isoformat())
+        # Metrics: enkel Bestandsdatum + Vandaag, gecentreerd (met marge links/rechts)
+        m1, c2, c3, m4 = st.columns([1, 2, 2, 1])
+        with c2:
+            st.metric("Bestandsdatum", file_date.isoformat() if file_date else "—")
+        with c3:
+            st.metric("Vandaag", date.today().isoformat())
 
-        st.dataframe(df, use_container_width=True)
+        st.divider()
 
-        # Optioneel: download knop
+        # Verwachte kolommen (met wissel -> voertuigwissel in app)
+        wanted_cols = {
+            "personeelsnummer": "personeelsnummer",
+            "dienstadres": "Dienstadres",
+            "uur": "uur",
+            "plaats": "plaats",
+            "richting": "richting",
+            "loop": "Loop",
+            "naam": "naam",
+            "voertuig": "voertuig",
+            "wissel": "voertuigwissel",
+        }
+
+        # Map echte kolomnamen in Excel naar onze output
+        col_map: dict[str, str] = {}
+        missing: list[str] = []
+        for excel_name, out_name in wanted_cols.items():
+            found = _find_col(df_raw, excel_name)
+            if not found:
+                missing.append(excel_name)
+            else:
+                col_map[found] = out_name
+
+        if missing:
+            st.error(
+                "In tabblad 'dienstlijst' ontbreken deze vereiste kolommen: "
+                + ", ".join(missing)
+            )
+            st.stop()
+
+        # Werk-DF met alleen relevante kolommen en juiste namen
+        df = df_raw[list(col_map.keys())].rename(columns=col_map)
+
+        # Zoekvenster (personeelsnummer)
+        st.subheader("Zoeken op personeelsnummer")
+        q = st.text_input("Personeelsnummer", placeholder="bv. 12345")
+
+        # Niets tonen (screenshot 2 weg) tot er gezocht wordt
+        if not q.strip():
+            st.info("Geef een personeelsnummer in om resultaten te tonen.")
+            st.stop()
+
+        q_norm = q.strip()
+
+        # Vergelijk als tekst (handig bij leading zeros)
+        pn_series = df["personeelsnummer"].astype(str).str.strip()
+        results = df[pn_series == q_norm].copy()
+
+        if results.empty:
+            st.warning(f"Geen resultaten gevonden voor personeelsnummer: {q_norm}")
+            st.stop()
+
+        st.success(f"Gevonden: {len(results)} rij(en) voor personeelsnummer {q_norm}")
+
+        # Toon resultaten
+        st.dataframe(results, use_container_width=True, hide_index=True)
+
+        # Download (optioneel, maar handig)
         out = BytesIO()
-        df.to_excel(out, index=False)
+        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+            results.to_excel(writer, index=False, sheet_name="dienstlijst_resultaat")
         out.seek(0)
+
+        safe_name = filename.rsplit(".", 1)[0]
         st.download_button(
-            "Download als Excel",
+            "Download resultaat als Excel",
             data=out,
-            file_name=filename,
+            file_name=f"{safe_name}_personeelsnummer_{q_norm}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
