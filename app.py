@@ -76,7 +76,7 @@ def clean_id_series(s: pd.Series) -> pd.Series:
 
 def clean_query(q: str) -> str:
     q = str(q).replace("\u00a0", " ").strip()
-    q = re.sub(r"\.0$", "", q)  # als iemand "6310.0" plakt
+    q = re.sub(r"\.0$", "", q)
     return q
 
 
@@ -197,7 +197,7 @@ def main():
         df["voertuig"] = clean_id_series(df["voertuig"])
         df["voertuigwissel"] = clean_id_series(df["voertuigwissel"])
 
-        # 1 zoekbalk: zoekt tegelijk in personeelnummer (exact) + voertuig (bevat) + voertuigwissel (bevat)
+        # 1 zoekbalk: zoekt in personeelnummer + voertuig + voertuigwissel
         st.subheader("Zoeken")
         q = st.text_input(
             "Personeelnummer, voertuig of voertuigwissel",
@@ -210,15 +210,17 @@ def main():
 
         q_norm = clean_query(q)
 
-        # Series voor zoeken
         pn = df["personeelnummer"].fillna("").astype(str)
         veh = df["voertuig"].fillna("").astype(str)
         swp = df["voertuigwissel"].fillna("").astype(str)
 
+        # personeelnummer: exact
+        # voertuig/voertuigwissel: bevat
+        pattern = re.escape(q_norm)
         mask = (
-            (pn == q_norm)  # personeelnummer: exact
-            | (veh.str.contains(re.escape(q_norm), case=False, na=False))  # voertuig: bevat
-            | (swp.str.contains(re.escape(q_norm), case=False, na=False))  # voertuigwissel: bevat
+            (pn == q_norm)
+            | (veh.str.contains(pattern, case=False, na=False))
+            | (swp.str.contains(pattern, case=False, na=False))
         )
 
         results = df[mask].copy()
@@ -227,4 +229,30 @@ def main():
             st.warning(f"Geen resultaten gevonden voor: {q_norm}")
             st.stop()
 
-        st.success(f"Gevonden: {len(results)} rij(en) voor: {q
+        st.success(f"Gevonden: {len(results)} rij(en) voor: {q_norm}")
+        st.dataframe(results, use_container_width=True, hide_index=True)
+
+        # Download (optioneel)
+        out = BytesIO()
+        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+            results.to_excel(writer, index=False, sheet_name="Dienstlijst_resultaat")
+        out.seek(0)
+
+        safe_name = filename.rsplit(".", 1)[0]
+        st.download_button(
+            "Download resultaat als Excel",
+            data=out,
+            file_name=f"{safe_name}_zoek_{q_norm}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        st.error(f"FTP inlezen mislukt: {e}")
+        st.info(
+            "Check of je in de juiste FTP-map zit na login. "
+            "Indien nodig: zet `ftp.cwd('mapnaam')` aan in de code."
+        )
+
+
+if __name__ == "__main__":
+    main()
