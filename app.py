@@ -59,6 +59,27 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
     return None
 
 
+def clean_id_series(s: pd.Series) -> pd.Series:
+    """
+    Maakt van IDs (personeelnummer/voertuig/voertuigwissel) altijd 'proper' tekst:
+    - non-breaking spaces weg
+    - strip
+    - trailing .0 verwijderen (typisch door Excel float)
+    """
+    return (
+        s.astype(str)
+        .str.replace("\u00a0", " ", regex=False)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+
+def clean_query(q: str) -> str:
+    q = str(q).replace("\u00a0", " ").strip()
+    q = re.sub(r"\.0$", "", q)  # als iemand "6310.0" plakt
+    return q
+
+
 @st.cache_data(ttl=300)
 def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
     """
@@ -148,95 +169,3 @@ def main():
             "richting": "richting",
             "loop": "Loop",
             "naam": "naam",
-            "voertuig": "voertuig",
-            "wissel": "voertuigwissel",
-        }
-
-        # Map echte kolomnamen in Excel naar onze output
-        col_map: dict[str, str] = {}
-        missing: list[str] = []
-        for excel_name, out_name in wanted_cols.items():
-            found = _find_col(df_raw, excel_name)
-            if not found:
-                missing.append(excel_name)
-            else:
-                col_map[found] = out_name
-
-        if missing:
-            st.error(
-                "In tabblad 'Dienstlijst' ontbreken deze vereiste kolommen: "
-                + ", ".join(missing)
-            )
-            st.stop()
-
-        df = df_raw[list(col_map.keys())].rename(columns=col_map)
-
-        # Zorg dat personeelnummer en voertuig altijd als tekst behandeld worden
-        df["personeelnummer"] = df["personeelnummer"].astype(str)
-        df["voertuig"] = df["voertuig"].astype(str)
-
-        # Keuze: zoeken op personeelnummer of voertuig
-        search_mode = st.radio("Zoeken op", ["Personeelnummer", "Voertuig"], horizontal=True)
-
-        if search_mode == "Personeelnummer":
-            q = st.text_input("Personeelnummer", placeholder="bv. 12345")
-        else:
-            q = st.text_input("Voertuig", placeholder="bv. 6201 (of deel van de code)")
-
-        if not q.strip():
-            st.info("Geef een zoekwaarde in om resultaten te tonen.")
-            st.stop()
-
-        q_norm = q.strip()
-
-        if search_mode == "Personeelnummer":
-            pn_series = (
-                df["personeelnummer"]
-                .astype(str)
-                .str.replace("\u00a0", " ", regex=False)  # NBSP -> spatie
-                .str.strip()
-                .str.replace(r"\.0$", "", regex=True)     # 12345.0 -> 12345
-            )
-            results = df[pn_series == q_norm].copy()
-            download_suffix = f"personeelnummer_{q_norm}"
-        else:
-            veh_series = (
-                df["voertuig"]
-                .astype(str)
-                .str.replace("\u00a0", " ", regex=False)
-                .str.strip()
-            )
-            # Zoeken op voertuig: case-insensitive "bevat" (handig als je maar een deel kent)
-            results = df[veh_series.str.contains(q_norm, case=False, na=False)].copy()
-            download_suffix = f"voertuig_{q_norm}"
-
-        if results.empty:
-            st.warning(f"Geen resultaten gevonden voor {search_mode.lower()}: {q_norm}")
-            st.stop()
-
-        st.success(f"Gevonden: {len(results)} rij(en) voor {search_mode.lower()} {q_norm}")
-        st.dataframe(results, use_container_width=True, hide_index=True)
-
-        out = BytesIO()
-        with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            results.to_excel(writer, index=False, sheet_name="Dienstlijst_resultaat")
-        out.seek(0)
-
-        safe_name = filename.rsplit(".", 1)[0]
-        st.download_button(
-            "Download resultaat als Excel",
-            data=out,
-            file_name=f"{safe_name}_{download_suffix}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-    except Exception as e:
-        st.error(f"FTP inlezen mislukt: {e}")
-        st.info(
-            "Check of je in de juiste FTP-map zit na login. "
-            "Indien nodig: zet `ftp.cwd('mapnaam')` aan in de code."
-        )
-
-
-if __name__ == "__main__":
-    main()
