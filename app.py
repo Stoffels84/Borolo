@@ -66,7 +66,7 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
       - list bestanden in huidige map na login
       - kiest vandaag of meest recente
       - downloadt naar geheugen
-      - leest Excel tabblad 'dienstlijst'
+      - leest Excel tabblad 'Dienstlijst'
     Vereiste secrets:
       FTP_HOST, FTP_USER, FTP_PASS
     Optioneel:
@@ -100,12 +100,12 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
 
         file_date = extract_yyyymmdd(chosen)
 
-        # Lees enkel tabblad "dienstlijst"
+        # Lees enkel tabblad "Dienstlijst"
         try:
-            df = pd.read_excel(bio, sheet_name="dienstlijst")
+            df = pd.read_excel(bio, sheet_name="Dienstlijst")
         except ValueError:
             # sheet bestaat niet
-            raise RuntimeError("Tabblad 'dienstlijst' niet gevonden in het Excel-bestand.")
+            raise RuntimeError("Tabblad 'Dienstlijst' niet gevonden in het Excel-bestand.")
 
         return chosen, file_date, df
 
@@ -167,7 +167,7 @@ def main():
 
         if missing:
             st.error(
-                "In tabblad 'dienstlijst' ontbreken deze vereiste kolommen: "
+                "In tabblad 'Dienstlijst' ontbreken deze vereiste kolommen: "
                 + ", ".join(missing)
             )
             st.stop()
@@ -202,7 +202,7 @@ def main():
         # Download (optioneel, maar handig)
         out = BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            results.to_excel(writer, index=False, sheet_name="dienstlijst_resultaat")
+            results.to_excel(writer, index=False, sheet_name="Dienstlijst_resultaat")
         out.seek(0)
 
         safe_name = filename.rsplit(".", 1)[0]
