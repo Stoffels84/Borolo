@@ -100,7 +100,6 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
 
         file_date = extract_yyyymmdd(chosen)
 
-        # Lees enkel tabblad "Dienstlijst"
         try:
             df = pd.read_excel(bio, sheet_name="Dienstlijst")
         except ValueError:
@@ -132,7 +131,7 @@ def main():
     try:
         filename, file_date, df_raw = load_excel_via_ftp()
 
-        # Metrics: enkel Bestandsdatum + Vandaag, gecentreerd (met marge links/rechts)
+        # Metrics: enkel Bestandsdatum + Vandaag, gecentreerd
         m1, c2, c3, m4 = st.columns([1, 2, 2, 1])
         with c2:
             st.metric("Bestandsdatum", file_date.isoformat() if file_date else "—")
@@ -141,7 +140,6 @@ def main():
 
         st.divider()
 
-        # Verwachte kolommen (met wissel -> voertuigwissel in app)
         wanted_cols = {
             "personeelnummer": "personeelnummer",
             "dienstadres": "Dienstadres",
@@ -171,49 +169,26 @@ def main():
             )
             st.stop()
 
-        # Werk-DF met alleen relevante kolommen en juiste namen
         df = df_raw[list(col_map.keys())].rename(columns=col_map)
 
-        # -------------------------
-        # Optie 1: force personeelnummer als tekst (na het mappen)
-        # (helpt tegen 12345.0 en verlies van leading zeros)
-        # -------------------------
+        # Zorg dat personeelnummer altijd als tekst behandeld wordt
         df["personeelnummer"] = df["personeelnummer"].astype(str)
 
-        # Zoekvenster (personeelnummer)
         st.subheader("Zoeken op personeelnummer")
         q = st.text_input("Personeelnummer", placeholder="bv. 12345")
 
-        # Niets tonen tot er gezocht wordt
         if not q.strip():
             st.info("Geef een personeelnummer in om resultaten te tonen.")
             st.stop()
 
         q_norm = q.strip()
 
-        # Vergelijk als tekst (handig bij leading zeros)
-        # Extra fix: verwijder ".0" op het einde (typisch wanneer Excel als float werd ingelezen)
         pn_series = (
             df["personeelnummer"]
             .astype(str)
-            .str.replace("\u00a0", " ", regex=False)          # NBSP -> spatie
+            .str.replace("\u00a0", " ", regex=False)  # NBSP -> spatie
             .str.strip()
-            .str.replace(r"\.0$", "", regex=True)             # 12345.0 -> 12345
-        )
-
-        # -------------------------
-        # Mini-check (debug): toont waarom het eventueel niet matcht
-        # -------------------------
-        st.caption("Mini-check (debug)")
-        st.write("Zoekterm (raw):", repr(q))
-        st.write("Zoekterm (norm):", repr(q_norm))
-        st.write(
-            "Eerste 20 personeelnummer waarden (raw):",
-            df["personeelnummer"].head(20).apply(lambda x: repr(x)).tolist(),
-        )
-        st.write(
-            "Eerste 20 personeelnummer waarden (norm):",
-            pn_series.head(20).apply(lambda x: repr(x)).tolist(),
+            .str.replace(r"\.0$", "", regex=True)     # 12345.0 -> 12345
         )
 
         results = df[pn_series == q_norm].copy()
@@ -223,11 +198,8 @@ def main():
             st.stop()
 
         st.success(f"Gevonden: {len(results)} rij(en) voor personeelnummer {q_norm}")
-
-        # Toon resultaten
         st.dataframe(results, use_container_width=True, hide_index=True)
 
-        # Download (optioneel, maar handig)
         out = BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             results.to_excel(writer, index=False, sheet_name="Dienstlijst_resultaat")
