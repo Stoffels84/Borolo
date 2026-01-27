@@ -7,11 +7,12 @@ from ftplib import FTP
 import pandas as pd
 import streamlit as st
 
+
 st.set_page_config(page_title="Steekkaart: zoek op personeelsnummer", layout="wide")
 
 
 def extract_yyyymmdd(name: str):
-    """Bestandsnaam start met yyyymmdd (bv. 20260127 - Basis Steekkaart ....xlsx)."""
+    """Bestandsnaam start met yyyymmdd (bv. 20260127 - ... .xlsx)."""
     m = re.match(r"^(\d{8})", name)
     if not m:
         return None
@@ -44,17 +45,6 @@ def choose_file(files: list[str], today: date) -> str | None:
         return sorted(today_matches)[-1]
 
     return max(candidates, key=lambda x: x[1])[0]
-
-
-def normalize_personeelsnummer(x) -> str:
-    """Maak personeelsnummer vergelijkbaar (string, trim, geen .0)."""
-    if pd.isna(x):
-        return ""
-    s = str(x).strip()
-    # Excel-nummers komen soms als 12345.0 binnen
-    if s.endswith(".0"):
-        s = s[:-2]
-    return s
 
 
 @st.cache_data(ttl=300)
@@ -91,7 +81,7 @@ def load_dienstlijst_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
         ftp.retrbinary(f"RETR {chosen}", bio.write)
         bio.seek(0)
 
-        # Lees alleen tabblad 'dienstlijst'
+        # Lees enkel het tabblad dienstlijst
         df = pd.read_excel(bio, sheet_name="dienstlijst")
 
         file_date = extract_yyyymmdd(chosen)
@@ -107,6 +97,16 @@ def load_dienstlijst_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
                 pass
 
 
+def normalize_personeelsnummer(x) -> str:
+    """Maak personeelsnummer vergelijkbaar (string, trim, geen .0)."""
+    if pd.isna(x):
+        return ""
+    s = str(x).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
+
 def main():
     st.title("Steekkaart: zoek op personeelsnummer")
 
@@ -117,7 +117,7 @@ def main():
         st.error(f"FTP/Excel inlezen mislukt: {e}")
         st.stop()
 
-    # Metrics gecentreerd (foto 2)
+    # Metrics gecentreerd
     _, c1, c2, c3, _ = st.columns([1, 2, 2, 2, 1])
     c1.metric("Gekozen bestand", filename)
     c2.metric("Bestandsdatum", file_date.isoformat() if file_date else "—")
@@ -125,10 +125,7 @@ def main():
 
     st.divider()
 
-    # Zoekveld
-    zoek = st.text_input("Zoek op personeelsnummer", placeholder="bv. 12345")
-
-    # Kolommen (case-insensitive)
+    # Vereiste kolommen
     required_cols = [
         "personeelsnummer",
         "Dienstadres",
@@ -140,20 +137,28 @@ def main():
         "voertuig",
         "wissel",
     ]
+
+    # Case-insensitive mapping (handig als Excel hoofdletters anders zijn)
     col_map = {c.lower(): c for c in df.columns}
     missing = [c for c in required_cols if c.lower() not in col_map]
     if missing:
-        st.error("Kolommen ontbreken in tabblad 'dienstlijst': " + ", ".join(missing))
+        st.error(
+            "Kolommen ontbreken in tabblad 'dienstlijst': "
+            + ", ".join(missing)
+        )
         st.write("Gevonden kolommen:", list(df.columns))
         st.stop()
 
-    # Maak view dataframe met gewenste kolommen + rename wissel -> voertuigwissel
+    # Selecteer en hernoem kolommen (wissel -> voertuigwissel)
     df_view = df[[col_map[c.lower()] for c in required_cols]].copy()
     df_view = df_view.rename(columns={col_map["wissel"]: "voertuigwissel"})
 
-    # Normaliseer personeelsnummer voor matching
+    # Normaliseer personeelsnummer kolom
     pn_col = col_map["personeelsnummer"]
     df_view["_pn_norm"] = df_view[pn_col].apply(normalize_personeelsnummer)
+
+    # Zoekvenster
+    zoek = st.text_input("Zoek op personeelsnummer", placeholder="bv. 12345")
 
     if not zoek.strip():
         st.info("Geef een personeelsnummer in om resultaten te zien.")
@@ -161,13 +166,14 @@ def main():
 
     zoek_norm = normalize_personeelsnummer(zoek)
 
-    # Exact match op personeelsnummer
+    # Exact match (meest logisch voor personeelsnummer)
     result = df_view[df_view["_pn_norm"] == zoek_norm].drop(columns=["_pn_norm"])
 
     if result.empty:
         st.warning("Geen resultaten gevonden voor dit personeelsnummer.")
         return
 
+    # Toon resultaten
     st.subheader("Resultaat")
     st.dataframe(result, use_container_width=True, hide_index=True)
 
