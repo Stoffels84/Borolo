@@ -84,7 +84,7 @@ def clean_query(q: str) -> str:
 def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
     """
     Leest via FTP:
-      - list bestanden in huidige map na login
+      - list bestanden in map 'steekkaart' na login
       - kiest vandaag of meest recente
       - downloadt naar geheugen
       - leest Excel tabblad 'Dienstlijst'
@@ -105,8 +105,8 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
         ftp.connect(host=host, port=port, timeout=30)
         ftp.login(user=user, passwd=pw)
 
-        # Indien je in een submap moet zijn:
-        # ftp.cwd("data")
+        # Vanaf nu staan de bestanden in de map 'steekkaart'
+        ftp.cwd("steekkaart")
 
         files = ftp.nlst()
         chosen = choose_file(files, today)
@@ -250,7 +250,7 @@ def main():
         st.error(f"FTP inlezen mislukt: {e}")
         st.info(
             "Check of je in de juiste FTP-map zit na login. "
-            "Indien nodig: zet `ftp.cwd('mapnaam')` aan in de code."
+            "Indien nodig: pas `ftp.cwd('steekkaart')` aan naar de correcte mapnaam."
         )
 
 
