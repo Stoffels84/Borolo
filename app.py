@@ -140,6 +140,7 @@ def load_excel_via_ftp() -> tuple[str, date | None, pd.DataFrame]:
 
 def main():
     st.title("Opzoeken voertuig chauffeur")
+    st.subheader("voor 100% zekerheid kijk op de uitrijbladen in de stelplaats GBR of E17")
 
     with st.sidebar:
         st.header("Instellingen")
