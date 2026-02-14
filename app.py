@@ -9,17 +9,12 @@ import pandas as pd
 import streamlit as st
 
 # ---------------------------
-# Optional dependencies (fail-safe)
+# Optional dependency (fail-safe)
 # ---------------------------
 try:
     from streamlit_javascript import st_javascript  # pip install streamlit-javascript
 except ModuleNotFoundError:
     st_javascript = None
-
-try:
-    from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
-except ModuleNotFoundError:
-    st_autorefresh = None
 
 st.set_page_config(page_title="Opzoeken voertuig chauffeur", layout="wide")
 
@@ -41,7 +36,6 @@ def format_time(val) -> str:
     """Format tijd naar HH:MM (verwijdert seconden)."""
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return ""
-    # datetime/time-like
     try:
         if hasattr(val, "strftime"):
             return val.strftime("%H:%M")
@@ -49,7 +43,6 @@ def format_time(val) -> str:
         pass
 
     s = str(val).strip()
-    # strings zoals 18:17:00 -> 18:17
     if ":" in s:
         parts = s.split(":")
         if len(parts) >= 2:
@@ -303,6 +296,16 @@ def inject_css():
 
           div[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
 
+          /* Pro countdown styling */
+          .cachebar {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 4px;
+            margin-bottom: 8px;
+          }
+          .cachebar b { font-weight: 800; }
+          .cachebar .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
           @media (max-width: 700px) {
             .block-container { padding-top: .8rem; padding-bottom: .8rem; padding-left: .7rem; padding-right: .7rem; }
             div[data-testid="stTextInput"] input { font-size: 18px !important; padding: 12px 12px !important; }
@@ -310,6 +313,62 @@ def inject_css():
             .neon-title { font-size: 22px !important; }
           }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def inject_pro_countdown_js(loaded_at: datetime):
+    """
+    ✅ Pro countdown:
+    - Geen Streamlit reruns
+    - Geen autorefresh dependency
+    - Pure JS timer in de browser
+    """
+    loaded_ms = int(loaded_at.timestamp() * 1000)
+    ttl_ms = int(CACHE_TTL_SECONDS * 1000)
+
+    st.markdown(
+        f"""
+        <div class="cachebar" id="cachebar">
+          🕒 Laatst geladen: <b class="mono" id="loaded_at">--:--</b>
+          &nbsp;·&nbsp; Cache TTL: <b>{CACHE_TTL_SECONDS//60} min</b>
+          &nbsp;·&nbsp; Vervalt over: <b class="mono" id="remain">--:--</b>
+        </div>
+
+        <script>
+          (function() {{
+            const loadedMs = {loaded_ms};
+            const ttlMs = {ttl_ms};
+
+            function pad(n) {{
+              return String(n).padStart(2, "0");
+            }}
+
+            function fmtHM(ms) {{
+              const d = new Date(ms);
+              return pad(d.getHours()) + ":" + pad(d.getMinutes());
+            }}
+
+            function tick() {{
+              const now = Date.now();
+              const age = now - loadedMs;
+              const remaining = Math.max(0, ttlMs - age);
+
+              const mm = Math.floor(remaining / 60000);
+              const ss = Math.floor((remaining % 60000) / 1000);
+
+              const loadedEl = window.parent.document.getElementById("loaded_at");
+              const remainEl = window.parent.document.getElementById("remain");
+
+              if (loadedEl) loadedEl.textContent = fmtHM(loadedMs);
+              if (remainEl) remainEl.textContent = pad(mm) + ":" + pad(ss);
+            }}
+
+            tick();
+            setInterval(tick, 1000);
+          }})();
+        </script>
         """,
         unsafe_allow_html=True,
     )
@@ -408,21 +467,6 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
         )
 
 
-def render_cache_status(loaded_at: datetime):
-    if st_autorefresh is not None:
-        st_autorefresh(interval=1000, key="cache_countdown_refresh")
-
-    now = now_be()
-    age = (now - loaded_at).total_seconds()
-    remaining = max(0, int(CACHE_TTL_SECONDS - age))
-    mm, ss = divmod(remaining, 60)
-
-    st.caption(
-        f"🕒 Laatst geladen: **{loaded_at.strftime('%H:%M')}** · Cache TTL: **{CACHE_TTL_SECONDS//60} min** · "
-        f"Vervalt over: **{mm:02d}:{ss:02d}**"
-    )
-
-
 def main():
     inject_css()
 
@@ -464,7 +508,8 @@ def main():
         data = payload["data"]
         loaded_at = payload["loaded_at"]
 
-        render_cache_status(loaded_at)
+        # ✅ Pro countdown: 0 reruns, 0 FTP impact
+        inject_pro_countdown_js(loaded_at)
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Zoeken")
