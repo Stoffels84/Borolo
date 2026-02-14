@@ -193,9 +193,9 @@ def inject_small_text_css():
     st.markdown(
         """
         <style>
-          .small-note { font-size: 10px; line-height: 1.2; opacity: 0.9; }
-          .small-muted { font-size: 10px; line-height: 1.2; opacity: 0.75; }
-          .small-date { font-size: 10px; line-height: 1.2; opacity: 0.85; margin-top: -6px; }
+          .small-note { font-size: 14px; line-height: 1.2; opacity: 0.9; }
+          .small-muted { font-size: 14px; line-height: 1.2; opacity: 0.75; }
+          .small-date { font-size: 14px; line-height: 1.2; opacity: 0.85; margin-top: -6px; }
           /* optioneel: iets minder verticale ruimte onder headers */
           h1, h2, h3 { margin-bottom: 0.25rem; }
         </style>
@@ -248,7 +248,7 @@ def main():
 
     st.title("Opzoeken voertuig chauffeur")
 
-    # Kleine tekst (10px) zoals gevraagd
+    # Kleine tekst (14px) zoals gevraagd
     st.markdown(
         '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
         unsafe_allow_html=True,
