@@ -51,13 +51,14 @@ def format_time(val) -> str:
 
 
 def format_date_ddmmyy(d) -> str:
-    """Datum formatter ddmmyy."""
+    """Datum formatter dd/mm/yyyy."""
     if not d:
         return ""
     try:
-        return d.strftime("%d%m%y")
+        return d.strftime("%d/%m/%Y")
     except Exception:
         return str(d)
+
 
 
 def extract_yyyymmdd(name: str):
