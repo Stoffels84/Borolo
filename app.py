@@ -21,7 +21,6 @@ try:
 except ModuleNotFoundError:
     st_autorefresh = None
 
-
 st.set_page_config(page_title="Opzoeken voertuig chauffeur", layout="wide")
 
 CACHE_TTL_SECONDS = 300  # 5 minuten
@@ -36,6 +35,36 @@ def now_be() -> datetime:
 
 def belgium_today() -> date:
     return now_be().date()
+
+
+def format_time(val) -> str:
+    """Format tijd naar HH:MM (verwijdert seconden)."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    # datetime/time-like
+    try:
+        if hasattr(val, "strftime"):
+            return val.strftime("%H:%M")
+    except Exception:
+        pass
+
+    s = str(val).strip()
+    # strings zoals 18:17:00 -> 18:17
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) >= 2:
+            return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+    return s
+
+
+def format_date_ddmmyy(d) -> str:
+    """Datum formatter ddmmyy."""
+    if not d:
+        return ""
+    try:
+        return d.strftime("%d%m%y")
+    except Exception:
+        return str(d)
 
 
 def extract_yyyymmdd(name: str):
@@ -215,16 +244,12 @@ def load_excels_via_ftp_three_days() -> dict:
             df = _prepare_df(df_raw)
 
             out[label] = {
-                "filename": chosen,  # intern
+                "filename": chosen,
                 "file_date": extract_yyyymmdd(chosen),
                 "df": df,
             }
 
-        # ✅ optie 4: loaded_at mee teruggeven (zit mee in cache)
-        return {
-            "loaded_at": now_be(),
-            "data": out,
-        }
+        return {"loaded_at": now_be(), "data": out}
 
     finally:
         try:
@@ -248,18 +273,15 @@ def inject_css():
           .small-date { font-size: 12px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
 
           div[data-testid="stMarkdownContainer"] .neon-title,
-          div[data-testid="stMarkdownContainer"] .neon-title * {
-            color: #39ff14 !important;
-          }
+          div[data-testid="stMarkdownContainer"] .neon-title * { color: #39ff14 !important; }
+
           .neon-title {
             font-size: 28px !important;
             font-weight: 900 !important;
             letter-spacing: 0.3px;
             margin-top: 10px;
             margin-bottom: 2px;
-            text-shadow:
-              0 0 6px rgba(57, 255, 20, 0.65),
-              0 0 14px rgba(57, 255, 20, 0.45);
+            text-shadow: 0 0 6px rgba(57,255,20,0.65), 0 0 14px rgba(57,255,20,0.45);
           }
 
           .card {
@@ -283,16 +305,8 @@ def inject_css():
 
           @media (max-width: 700px) {
             .block-container { padding-top: .8rem; padding-bottom: .8rem; padding-left: .7rem; padding-right: .7rem; }
-            div[data-testid="stTextInput"] input {
-              font-size: 18px !important;
-              padding: 12px 12px !important;
-            }
-            div[data-testid="stButton"] button {
-              width: 100%;
-              padding: 12px 14px !important;
-              font-size: 16px !important;
-              border-radius: 14px !important;
-            }
+            div[data-testid="stTextInput"] input { font-size: 18px !important; padding: 12px 12px !important; }
+            div[data-testid="stButton"] button { width: 100%; padding: 12px 14px !important; font-size: 16px !important; border-radius: 14px !important; }
             .neon-title { font-size: 22px !important; }
           }
         </style>
@@ -329,7 +343,7 @@ def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
     view = df[cols].copy()
 
     def make_header(row: pd.Series, idx: int) -> str:
-        uur = str(row.get("uur", "")).strip() if "uur" in row else ""
+        uur = format_time(row.get("uur", "")) if "uur" in row else ""
         voertuig = str(row.get("voertuig", "")).strip() if "voertuig" in row else ""
         naam = str(row.get("naam", "")).strip() if "naam" in row else ""
         base = " • ".join([x for x in [uur, voertuig] if x])
@@ -341,6 +355,8 @@ def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
             pills = []
             for c in cols:
                 v = row.get(c, "")
+                if str(c).lower() == "uur":
+                    v = format_time(v)
                 if pd.isna(v) or str(v).strip() == "":
                     continue
                 pills.append(f'<span class="pill"><b>{c}</b> {v}</span>')
@@ -358,7 +374,10 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
     df = payload.get("df")
 
     if file_date:
-        st.markdown(f'<div class="small-date">Datum: {file_date.isoformat()}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="small-date">Datum: {format_date_ddmmyy(file_date)}</div>',
+            unsafe_allow_html=True,
+        )
 
     if df is None:
         st.markdown(f'<div class="small-muted">Geen bestand gevonden voor {label.lower()}.</div>', unsafe_allow_html=True)
@@ -390,24 +409,18 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
 
 
 def render_cache_status(loaded_at: datetime):
-    """
-    ✅ optie 4: toon 'laatst geladen' + TTL + countdown.
-    Live countdown als streamlit-autorefresh aanwezig is.
-    """
-    # Live refresh elke 1s (maar alleen voor dit stukje UI)
     if st_autorefresh is not None:
         st_autorefresh(interval=1000, key="cache_countdown_refresh")
 
     now = now_be()
     age = (now - loaded_at).total_seconds()
     remaining = max(0, int(CACHE_TTL_SECONDS - age))
-
     mm, ss = divmod(remaining, 60)
-    loaded_str = loaded_at.strftime("%H:%M:%S")
-    ttl_str = f"{CACHE_TTL_SECONDS // 60} min"
 
-    # Compacte statusregel
-    st.caption(f"🕒 Laatst geladen: **{loaded_str}** · Cache TTL: **{ttl_str}** · Vervalt over: **{mm:02d}:{ss:02d}**")
+    st.caption(
+        f"🕒 Laatst geladen: **{loaded_at.strftime('%H:%M')}** · Cache TTL: **{CACHE_TTL_SECONDS//60} min** · "
+        f"Vervalt over: **{mm:02d}:{ss:02d}**"
+    )
 
 
 def main():
@@ -451,7 +464,6 @@ def main():
         data = payload["data"]
         loaded_at = payload["loaded_at"]
 
-        # ✅ optie 4 UI
         render_cache_status(loaded_at)
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
