@@ -8,15 +8,36 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-# ✅ stap 1/2: viewport detectie via JS component
-from streamlit_javascript import st_javascript
+# ---------------------------
+# Optional dependencies (fail-safe)
+# ---------------------------
+try:
+    from streamlit_javascript import st_javascript  # pip install streamlit-javascript
+except ModuleNotFoundError:
+    st_javascript = None
+
+try:
+    from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
+except ModuleNotFoundError:
+    st_autorefresh = None
+
 
 st.set_page_config(page_title="Opzoeken voertuig chauffeur", layout="wide")
+
+CACHE_TTL_SECONDS = 300  # 5 minuten
 
 
 # ---------------------------
 # Helpers
 # ---------------------------
+def now_be() -> datetime:
+    return datetime.now(ZoneInfo("Europe/Brussels"))
+
+
+def belgium_today() -> date:
+    return now_be().date()
+
+
 def extract_yyyymmdd(name: str):
     """Verwacht dat de bestandsnaam start met yyyymmdd, bv: 20260127_iets.xlsx"""
     m = re.match(r"^(\d{8})", name)
@@ -138,18 +159,13 @@ def _prepare_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def belgium_today() -> date:
-    return datetime.now(ZoneInfo("Europe/Brussels")).date()
-
-
 # ---------------------------
 # Viewport detectie (stap 2)
 # ---------------------------
 def get_viewport_width() -> int | None:
-    """
-    Betrouwbare 'universele' detectie: meet viewport-breedte.
-    Kan bij eerste run None zijn.
-    """
+    """Meet viewport breedte als JS component beschikbaar is."""
+    if st_javascript is None:
+        return None
     w = st_javascript("window.innerWidth")
     try:
         return int(w) if w is not None else None
@@ -158,8 +174,6 @@ def get_viewport_width() -> int | None:
 
 
 def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
-    # Fallback: als onbekend, gedraag je als desktop (veiliger voor debugging),
-    # maar je kan dit ook naar True zetten als je “mobiel-first” wil.
     if width is None:
         return False
     return width < breakpoint
@@ -168,8 +182,8 @@ def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
 # ---------------------------
 # FTP loader (3 dagen)
 # ---------------------------
-@st.cache_data(ttl=300)
-def load_excels_via_ftp_three_days() -> dict[str, dict]:
+@st.cache_data(ttl=CACHE_TTL_SECONDS)
+def load_excels_via_ftp_three_days() -> dict:
     host = st.secrets["FTP_HOST"]
     port = int(st.secrets.get("FTP_PORT", 21))
     user = st.secrets["FTP_USER"]
@@ -201,12 +215,16 @@ def load_excels_via_ftp_three_days() -> dict[str, dict]:
             df = _prepare_df(df_raw)
 
             out[label] = {
-                "filename": chosen,
+                "filename": chosen,  # intern
                 "file_date": extract_yyyymmdd(chosen),
                 "df": df,
             }
 
-        return out
+        # ✅ optie 4: loaded_at mee teruggeven (zit mee in cache)
+        return {
+            "loaded_at": now_be(),
+            "data": out,
+        }
 
     finally:
         try:
@@ -222,7 +240,6 @@ def load_excels_via_ftp_three_days() -> dict[str, dict]:
 # UI rendering (stap 1 + 3)
 # ---------------------------
 def inject_css():
-    # ✅ stap 1: CSS media queries + universele touch targets + jouw neon titel
     st.markdown(
         """
         <style>
@@ -230,7 +247,6 @@ def inject_css():
           .small-muted { font-size: 12px !important; line-height: 1.25; opacity: 0.75; }
           .small-date { font-size: 12px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
 
-          /* SUPER-specifiek: Streamlit markdown container + onze class */
           div[data-testid="stMarkdownContainer"] .neon-title,
           div[data-testid="stMarkdownContainer"] .neon-title * {
             color: #39ff14 !important;
@@ -246,7 +262,6 @@ def inject_css():
               0 0 14px rgba(57, 255, 20, 0.45);
           }
 
-          /* Kaartstijl (werkt overal, niet app-specifiek) */
           .card {
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: 16px;
@@ -264,14 +279,10 @@ def inject_css():
           }
           .pill b { font-weight: 800; }
 
-          /* Compactere dataframe look */
           div[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
 
-          /* ✅ Responsive gedrag via media query */
           @media (max-width: 700px) {
             .block-container { padding-top: .8rem; padding-bottom: .8rem; padding-left: .7rem; padding-right: .7rem; }
-
-            /* Grotere touch targets */
             div[data-testid="stTextInput"] input {
               font-size: 18px !important;
               padding: 12px 12px !important;
@@ -282,8 +293,6 @@ def inject_css():
               font-size: 16px !important;
               border-radius: 14px !important;
             }
-
-            /* Titel net iets kleiner op mobiel */
             .neon-title { font-size: 22px !important; }
           }
         </style>
@@ -293,9 +302,6 @@ def inject_css():
 
 
 def auto_pick_columns(df: pd.DataFrame, max_cols: int) -> list[str]:
-    """
-    Universele kolomselectie (app-onafhankelijk) om cards compact te houden.
-    """
     preferred_tokens = [
         "uur", "tijd", "time", "naam", "name", "voertuig", "vehicle",
         "plaats", "locatie", "location", "richting", "loop", "dienst", "adres",
@@ -319,13 +325,9 @@ def auto_pick_columns(df: pd.DataFrame, max_cols: int) -> list[str]:
 
 
 def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
-    """
-    Toon resultaten mobielvriendelijk als cards (expanders).
-    """
     cols = auto_pick_columns(df, max_cols=max_cols)
     view = df[cols].copy()
 
-    # Header voorkeur: uur/voertuig als die bestaan
     def make_header(row: pd.Series, idx: int) -> str:
         uur = str(row.get("uur", "")).strip() if "uur" in row else ""
         voertuig = str(row.get("voertuig", "")).strip() if "voertuig" in row else ""
@@ -350,28 +352,18 @@ def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
 
 
 def render_section(label: str, payload: dict, personeelnummer_query: str, show_table: bool, max_cols: int, expand_first: bool):
-    st.markdown(
-        f'<div class="neon-title"><span>{label}</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="neon-title"><span>{label}</span></div>', unsafe_allow_html=True)
 
     file_date = payload.get("file_date")
     df = payload.get("df")
 
     if file_date:
-        st.markdown(
-            f'<div class="small-date">Datum: {file_date.isoformat()}</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div class="small-date">Datum: {file_date.isoformat()}</div>', unsafe_allow_html=True)
 
     if df is None:
-        st.markdown(
-            f'<div class="small-muted">Geen bestand gevonden voor {label.lower()}.</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div class="small-muted">Geen bestand gevonden voor {label.lower()}.</div>', unsafe_allow_html=True)
         return
 
-    # Snel: index lookup
     if personeelnummer_query in df.index:
         results = df.loc[[personeelnummer_query]].copy()
     else:
@@ -385,13 +377,9 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
         return
 
     st.success(f"Gevonden: {len(results)} rij(en) in {label}.")
-
-    # Cards (mobiel/desktop allebei ok)
     render_results_cards(results, max_cols=max_cols, default_expand=expand_first)
 
-    # Optionele tabel
     if show_table:
-        # niet te hoog op mobiel
         height = 260 if max_cols <= 6 else 420
         st.dataframe(
             results.reset_index(drop=True),
@@ -401,21 +389,38 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
         )
 
 
+def render_cache_status(loaded_at: datetime):
+    """
+    ✅ optie 4: toon 'laatst geladen' + TTL + countdown.
+    Live countdown als streamlit-autorefresh aanwezig is.
+    """
+    # Live refresh elke 1s (maar alleen voor dit stukje UI)
+    if st_autorefresh is not None:
+        st_autorefresh(interval=1000, key="cache_countdown_refresh")
+
+    now = now_be()
+    age = (now - loaded_at).total_seconds()
+    remaining = max(0, int(CACHE_TTL_SECONDS - age))
+
+    mm, ss = divmod(remaining, 60)
+    loaded_str = loaded_at.strftime("%H:%M:%S")
+    ttl_str = f"{CACHE_TTL_SECONDS // 60} min"
+
+    # Compacte statusregel
+    st.caption(f"🕒 Laatst geladen: **{loaded_str}** · Cache TTL: **{ttl_str}** · Vervalt over: **{mm:02d}:{ss:02d}**")
+
+
 def main():
     inject_css()
 
-    # ✅ stap 2: viewport detecteren
     width = get_viewport_width()
     small = is_small_screen(width, breakpoint=700)
 
-    # ✅ stap 3: logica defaults aanpassen op basis van viewport
-    # Mobiel: toon standaard 1 dag, geen tabel, minder kolommen
     default_day = "Vandaag" if small else "Alles"
     default_show_table = False if small else True
     max_cols = 6 if small else 10
     expand_first = True if small else False
 
-    # Header compact
     st.title("Opzoeken voertuig chauffeur")
     st.markdown(
         '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
@@ -426,7 +431,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Instellingen: expander (werkt beter op mobiel dan sidebar)
     with st.expander("⚙️ Instellingen", expanded=False):
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
@@ -434,18 +438,22 @@ def main():
         with c2:
             show_table = st.toggle("Toon tabel", value=default_show_table)
         with c3:
-            # Optioneel: tonen voor debugging (kan je later weghalen)
             st.caption(f"Viewport: {width}px" if width else "Viewport: onbekend")
 
         st.caption("Bestanden worden gekozen op basis van datum (yyyymmdd...).")
 
     if refresh:
         st.cache_data.clear()
+        st.rerun()
 
     try:
-        data = load_excels_via_ftp_three_days()
+        payload = load_excels_via_ftp_three_days()
+        data = payload["data"]
+        loaded_at = payload["loaded_at"]
 
-        # Zoeken in een “kaart”
+        # ✅ optie 4 UI
+        render_cache_status(loaded_at)
+
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Zoeken")
         q = st.text_input("Personeelnummer (exact)", placeholder="bv. 38529", label_visibility="collapsed")
@@ -457,12 +465,13 @@ def main():
 
         q_norm = clean_query(q)
 
-        # Dagkeuze: mobiel minder scroll
         options = ["Vandaag", "Gisteren", "Morgen", "Alles"]
+        idx = options.index(default_day) if default_day in options else 0
+
         day = st.radio(
             "Kies dag",
             options=options,
-            index=options.index(default_day),
+            index=idx,
             horizontal=True,
             label_visibility="collapsed",
         )
@@ -471,24 +480,10 @@ def main():
 
         if day == "Alles":
             for label in ["Gisteren", "Vandaag", "Morgen"]:
-                render_section(
-                    label,
-                    data[label],
-                    q_norm,
-                    show_table=show_table,
-                    max_cols=max_cols,
-                    expand_first=expand_first,
-                )
+                render_section(label, data[label], q_norm, show_table, max_cols, expand_first)
                 st.divider()
         else:
-            render_section(
-                day,
-                data[day],
-                q_norm,
-                show_table=show_table,
-                max_cols=max_cols,
-                expand_first=expand_first,
-            )
+            render_section(day, data[day], q_norm, show_table, max_cols, expand_first)
 
     except Exception as e:
         st.error(f"FTP inlezen mislukt: {e}")
