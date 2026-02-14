@@ -8,7 +8,10 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Voertuig chauffeur", layout="wide")
+# ✅ stap 1/2: viewport detectie via JS component
+from streamlit_javascript import st_javascript
+
+st.set_page_config(page_title="Opzoeken voertuig chauffeur", layout="wide")
 
 
 # ---------------------------
@@ -40,10 +43,10 @@ def _find_col(df: pd.DataFrame, wanted: str) -> str | None:
 
 def clean_id_series(s: pd.Series) -> pd.Series:
     """
-    IDs altijd 'proper' tekst:
+    Maakt van IDs altijd 'proper' tekst:
     - non-breaking spaces weg
     - strip
-    - trailing .0 verwijderen (Excel float)
+    - trailing .0 verwijderen (typisch door Excel float)
     """
     return (
         s.astype(str)
@@ -122,18 +125,44 @@ def _prepare_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     df["voertuig"] = clean_id_series(df["voertuig"])
     df["voertuigwissel"] = clean_id_series(df["voertuigwissel"])
 
-    # Mobiel: sorteer logisch (als uur bestaat)
+    # Optioneel: sorteer op uur als dat lukt (mobiel: chronologisch is rustiger)
     if "uur" in df.columns:
         try:
             df = df.sort_values("uur")
         except Exception:
             pass
 
+    # Sneller zoeken: index op personeelnummer
+    df = df.set_index("personeelnummer", drop=False)
+
     return df
 
 
 def belgium_today() -> date:
     return datetime.now(ZoneInfo("Europe/Brussels")).date()
+
+
+# ---------------------------
+# Viewport detectie (stap 2)
+# ---------------------------
+def get_viewport_width() -> int | None:
+    """
+    Betrouwbare 'universele' detectie: meet viewport-breedte.
+    Kan bij eerste run None zijn.
+    """
+    w = st_javascript("window.innerWidth")
+    try:
+        return int(w) if w is not None else None
+    except Exception:
+        return None
+
+
+def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
+    # Fallback: als onbekend, gedraag je als desktop (veiliger voor debugging),
+    # maar je kan dit ook naar True zetten als je “mobiel-first” wil.
+    if width is None:
+        return False
+    return width < breakpoint
 
 
 # ---------------------------
@@ -171,9 +200,6 @@ def load_excels_via_ftp_three_days() -> dict[str, dict]:
             df_raw = _load_one_excel_from_ftp(ftp, chosen)
             df = _prepare_df(df_raw)
 
-            # Sneller zoeken: index op personeelnummer
-            df = df.set_index("personeelnummer", drop=False)
-
             out[label] = {
                 "filename": chosen,
                 "file_date": extract_yyyymmdd(chosen),
@@ -193,41 +219,26 @@ def load_excels_via_ftp_three_days() -> dict[str, dict]:
 
 
 # ---------------------------
-# UI (mobiel)
+# UI rendering (stap 1 + 3)
 # ---------------------------
-def inject_mobile_css():
+def inject_css():
+    # ✅ stap 1: CSS media queries + universele touch targets + jouw neon titel
     st.markdown(
         """
         <style>
-          /* Breder en compacter op mobiel */
-          .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-
-          /* Grotere touch targets */
-          div[data-testid="stTextInput"] input {
-            font-size: 18px !important;
-            padding: 12px 12px !important;
-          }
-          div[data-testid="stButton"] button {
-            width: 100%;
-            padding: 12px 14px !important;
-            font-size: 16px !important;
-            border-radius: 14px !important;
-          }
-
-          /* Compacte info-tekst */
-          .small-note { font-size: 12px !important; line-height: 1.25; opacity: 0.9; margin-top: 2px; }
+          .small-note { font-size: 12px !important; line-height: 1.25; opacity: 0.9; }
           .small-muted { font-size: 12px !important; line-height: 1.25; opacity: 0.75; }
           .small-date { font-size: 12px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
 
-          /* Titel neon (zoals je had) */
+          /* SUPER-specifiek: Streamlit markdown container + onze class */
           div[data-testid="stMarkdownContainer"] .neon-title,
           div[data-testid="stMarkdownContainer"] .neon-title * {
             color: #39ff14 !important;
           }
           .neon-title {
-            font-size: 22px !important;
+            font-size: 28px !important;
             font-weight: 900 !important;
-            letter-spacing: 0.2px;
+            letter-spacing: 0.3px;
             margin-top: 10px;
             margin-bottom: 2px;
             text-shadow:
@@ -235,7 +246,7 @@ def inject_mobile_css():
               0 0 14px rgba(57, 255, 20, 0.45);
           }
 
-          /* Kaart-look */
+          /* Kaartstijl (werkt overal, niet app-specifiek) */
           .card {
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: 16px;
@@ -249,33 +260,100 @@ def inject_mobile_css():
             border-radius: 999px;
             border: 1px solid rgba(255,255,255,0.12);
             background: rgba(255,255,255,0.03);
-            font-size: 12px;
-            line-height: 1;
+            font-size: 12px; line-height: 1;
           }
           .pill b { font-weight: 800; }
 
-          /* Tabellen: minder hoog, minder padding */
+          /* Compactere dataframe look */
           div[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
+
+          /* ✅ Responsive gedrag via media query */
+          @media (max-width: 700px) {
+            .block-container { padding-top: .8rem; padding-bottom: .8rem; padding-left: .7rem; padding-right: .7rem; }
+
+            /* Grotere touch targets */
+            div[data-testid="stTextInput"] input {
+              font-size: 18px !important;
+              padding: 12px 12px !important;
+            }
+            div[data-testid="stButton"] button {
+              width: 100%;
+              padding: 12px 14px !important;
+              font-size: 16px !important;
+              border-radius: 14px !important;
+            }
+
+            /* Titel net iets kleiner op mobiel */
+            .neon-title { font-size: 22px !important; }
+          }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _compact_view(df: pd.DataFrame) -> pd.DataFrame:
+def auto_pick_columns(df: pd.DataFrame, max_cols: int) -> list[str]:
     """
-    Kies welke kolommen je op mobiel wil tonen.
-    Pas gerust aan.
+    Universele kolomselectie (app-onafhankelijk) om cards compact te houden.
     """
-    preferred = ["uur", "naam", "voertuig", "voertuigwissel", "plaats", "richting", "Loop", "Dienstadres"]
-    cols = [c for c in preferred if c in df.columns]
-    if not cols:
-        return df
-    return df[cols]
+    preferred_tokens = [
+        "uur", "tijd", "time", "naam", "name", "voertuig", "vehicle",
+        "plaats", "locatie", "location", "richting", "loop", "dienst", "adres",
+        "id", "nr", "nummer", "wissel", "change"
+    ]
+    cols = list(df.columns)
+
+    def score(col: str) -> int:
+        c = str(col).lower()
+        s = 0
+        if any(t in c for t in preferred_tokens):
+            s += 3
+        if len(c) <= 10:
+            s += 1
+        if any(t in c for t in ["omschrijving", "description", "comment", "opmerking", "details"]):
+            s -= 2
+        return s
+
+    ranked = sorted(cols, key=score, reverse=True)
+    return ranked[: max_cols if len(ranked) >= max_cols else len(ranked)]
 
 
-def render_day(label: str, payload: dict, personeelnummer_query: str, show_table: bool):
-    st.markdown(f'<div class="neon-title"><span>{label}</span></div>', unsafe_allow_html=True)
+def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
+    """
+    Toon resultaten mobielvriendelijk als cards (expanders).
+    """
+    cols = auto_pick_columns(df, max_cols=max_cols)
+    view = df[cols].copy()
+
+    # Header voorkeur: uur/voertuig als die bestaan
+    def make_header(row: pd.Series, idx: int) -> str:
+        uur = str(row.get("uur", "")).strip() if "uur" in row else ""
+        voertuig = str(row.get("voertuig", "")).strip() if "voertuig" in row else ""
+        naam = str(row.get("naam", "")).strip() if "naam" in row else ""
+        base = " • ".join([x for x in [uur, voertuig] if x])
+        return base or naam or f"Resultaat {idx+1}"
+
+    for i, row in view.reset_index(drop=True).iterrows():
+        with st.expander(make_header(row, i), expanded=(default_expand and i == 0)):
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            pills = []
+            for c in cols:
+                v = row.get(c, "")
+                if pd.isna(v) or str(v).strip() == "":
+                    continue
+                pills.append(f'<span class="pill"><b>{c}</b> {v}</span>')
+            st.markdown(
+                f'<div class="kv">{"".join(pills) if pills else "<span class=\'pill\'>Leeg</span>"}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_section(label: str, payload: dict, personeelnummer_query: str, show_table: bool, max_cols: int, expand_first: bool):
+    st.markdown(
+        f'<div class="neon-title"><span>{label}</span></div>',
+        unsafe_allow_html=True,
+    )
 
     file_date = payload.get("file_date")
     df = payload.get("df")
@@ -293,7 +371,7 @@ def render_day(label: str, payload: dict, personeelnummer_query: str, show_table
         )
         return
 
-    # Supersnelle lookup door index
+    # Snel: index lookup
     if personeelnummer_query in df.index:
         results = df.loc[[personeelnummer_query]].copy()
     else:
@@ -308,56 +386,39 @@ def render_day(label: str, payload: dict, personeelnummer_query: str, show_table
 
     st.success(f"Gevonden: {len(results)} rij(en) in {label}.")
 
-    # Mobiel: toon eerst “cards”
-    compact = _compact_view(results)
+    # Cards (mobiel/desktop allebei ok)
+    render_results_cards(results, max_cols=max_cols, default_expand=expand_first)
 
-    for i, row in compact.reset_index(drop=True).iterrows():
-        uur = row.get("uur", "")
-        naam = row.get("naam", "")
-        voertuig = row.get("voertuig", "")
-        wissel = row.get("voertuigwissel", "")
-        plaats = row.get("plaats", "")
-        richting = row.get("richting", "")
-
-        header = f"{uur} • {voertuig}" if str(uur).strip() else f"{voertuig}"
-        with st.expander(header, expanded=(len(compact) <= 2 and i == 0)):
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            pills = []
-            if str(naam).strip():
-                pills.append(f'<span class="pill"><b>Naam</b> {naam}</span>')
-            if str(plaats).strip():
-                pills.append(f'<span class="pill"><b>Plaats</b> {plaats}</span>')
-            if str(richting).strip():
-                pills.append(f'<span class="pill"><b>Richting</b> {richting}</span>')
-            if str(voertuig).strip():
-                pills.append(f'<span class="pill"><b>Voertuig</b> {voertuig}</span>')
-            if str(wissel).strip():
-                pills.append(f'<span class="pill"><b>Wissel</b> {wissel}</span>')
-
-            st.markdown(f'<div class="kv">{"".join(pills)}</div>', unsafe_allow_html=True)
-
-            # Extra velden compact onderaan (als ze bestaan)
-            extras = []
-            for k in ["Loop", "Dienstadres"]:
-                if k in compact.columns and str(row.get(k, "")).strip():
-                    extras.append(f"**{k}:** {row.get(k)}")
-            if extras:
-                st.markdown("\n\n".join(extras))
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    # Optioneel: tabel tonen (handig op desktop of als je alles wil zien)
+    # Optionele tabel
     if show_table:
-        st.dataframe(compact.reset_index(drop=True), use_container_width=True, hide_index=True, height=260)
+        # niet te hoog op mobiel
+        height = 260 if max_cols <= 6 else 420
+        st.dataframe(
+            results.reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
+            height=height,
+        )
 
 
 def main():
-    inject_mobile_css()
+    inject_css()
 
-    # Bovenaan compact: titel + waarschuwingen
-    st.markdown("## Opzoeken voertuig chauffeur")
+    # ✅ stap 2: viewport detecteren
+    width = get_viewport_width()
+    small = is_small_screen(width, breakpoint=700)
+
+    # ✅ stap 3: logica defaults aanpassen op basis van viewport
+    # Mobiel: toon standaard 1 dag, geen tabel, minder kolommen
+    default_day = "Vandaag" if small else "Alles"
+    default_show_table = False if small else True
+    max_cols = 6 if small else 10
+    expand_first = True if small else False
+
+    # Header compact
+    st.title("Opzoeken voertuig chauffeur")
     st.markdown(
-        '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen — controleer zeker de uitrijlijst op GBR of E17.</div>',
+        '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -365,13 +426,17 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # “Instellingen” in expander i.p.v. sidebar (sidebar is vaak irritant op mobiel)
+    # Instellingen: expander (werkt beter op mobiel dan sidebar)
     with st.expander("⚙️ Instellingen", expanded=False):
-        colA, colB = st.columns([1, 1])
-        with colA:
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
             refresh = st.button("🔄 Herladen (cache leegmaken)")
-        with colB:
-            show_table = st.toggle("Toon tabel", value=False)
+        with c2:
+            show_table = st.toggle("Toon tabel", value=default_show_table)
+        with c3:
+            # Optioneel: tonen voor debugging (kan je later weghalen)
+            st.caption(f"Viewport: {width}px" if width else "Viewport: onbekend")
+
         st.caption("Bestanden worden gekozen op basis van datum (yyyymmdd...).")
 
     if refresh:
@@ -380,23 +445,24 @@ def main():
     try:
         data = load_excels_via_ftp_three_days()
 
-        # Zoek “kaart”
+        # Zoeken in een “kaart”
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### Zoeken", help="Typ een personeelnummer. De match is exact.")
-        q = st.text_input("Personeelnummer", placeholder="bv. 38529", label_visibility="collapsed")
+        st.subheader("Zoeken")
+        q = st.text_input("Personeelnummer (exact)", placeholder="bv. 38529", label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not q.strip():
-            st.info("Geef een personeelnummer in om resultaten te tonen.")
+            st.info("Geef een personeelnummer in om resultaten te tonen (gisteren/vandaag/morgen).")
             st.stop()
 
         q_norm = clean_query(q)
 
-        # Dagkeuze: minder scroll (mobiel-first)
+        # Dagkeuze: mobiel minder scroll
+        options = ["Vandaag", "Gisteren", "Morgen", "Alles"]
         day = st.radio(
             "Kies dag",
-            options=["Vandaag", "Gisteren", "Morgen", "Alles"],
-            index=0,
+            options=options,
+            index=options.index(default_day),
             horizontal=True,
             label_visibility="collapsed",
         )
@@ -405,10 +471,24 @@ def main():
 
         if day == "Alles":
             for label in ["Gisteren", "Vandaag", "Morgen"]:
-                render_day(label, data[label], q_norm, show_table=show_table)
+                render_section(
+                    label,
+                    data[label],
+                    q_norm,
+                    show_table=show_table,
+                    max_cols=max_cols,
+                    expand_first=expand_first,
+                )
                 st.divider()
         else:
-            render_day(day, data[day], q_norm, show_table=show_table)
+            render_section(
+                day,
+                data[day],
+                q_norm,
+                show_table=show_table,
+                max_cols=max_cols,
+                expand_first=expand_first,
+            )
 
     except Exception as e:
         st.error(f"FTP inlezen mislukt: {e}")
