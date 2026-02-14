@@ -135,15 +135,6 @@ def belgium_today() -> date:
 # ---------------------------
 @st.cache_data(ttl=300)
 def load_excels_via_ftp_three_days() -> dict[str, dict]:
-    """
-    Leest via FTP in map 'steekkaart' na login:
-    - Gisteren (vandaag-1), Vandaag, Morgen (vandaag+1)
-    - downloadt naar geheugen
-    - leest Excel tabblad 'Dienstlijst'
-    Retourneert dict per label met: filename (intern), file_date, df (of None als niet gevonden)
-    Vereiste secrets: FTP_HOST, FTP_USER, FTP_PASS
-    Optioneel: FTP_PORT (default 21)
-    """
     host = st.secrets["FTP_HOST"]
     port = int(st.secrets.get("FTP_PORT", 21))
     user = st.secrets["FTP_USER"]
@@ -175,7 +166,7 @@ def load_excels_via_ftp_three_days() -> dict[str, dict]:
             df = _prepare_df(df_raw)
 
             out[label] = {
-                "filename": chosen,  # intern, niet tonen in UI
+                "filename": chosen,  # intern
                 "file_date": extract_yyyymmdd(chosen),
                 "df": df,
             }
@@ -199,9 +190,27 @@ def inject_css():
     st.markdown(
         """
         <style>
-          .small-note { font-size: 10px; line-height: 1.2; opacity: 0.9; }
-          .small-muted { font-size: 10px; line-height: 1.2; opacity: 0.75; }
-          .small-date { font-size: 10px; line-height: 1.2; opacity: 0.85; margin-top: -6px; }
+          .small-note { font-size: 10px !important; line-height: 1.2; opacity: 0.9; }
+          .small-muted { font-size: 10px !important; line-height: 1.2; opacity: 0.75; }
+          .small-date { font-size: 10px !important; line-height: 1.2; opacity: 0.85; margin-top: -6px; }
+
+          /* SUPER-specifiek: Streamlit markdown container + onze class */
+          div[data-testid="stMarkdownContainer"] .neon-title,
+          div[data-testid="stMarkdownContainer"] .neon-title * {
+            color: #39ff14 !important;
+          }
+
+          .neon-title {
+            font-size: 28px !important;
+            font-weight: 900 !important;
+            letter-spacing: 0.3px;
+            margin-top: 10px;
+            margin-bottom: 2px;
+            /* glow => echt fluo */
+            text-shadow:
+              0 0 6px rgba(57, 255, 20, 0.65),
+              0 0 14px rgba(57, 255, 20, 0.45);
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -209,13 +218,9 @@ def inject_css():
 
 
 def render_section(label: str, payload: dict, personeelnummer_query: str):
-    # Fluo groene titel (INLINE + !important => wint van Streamlit theme)
-    st.markdown(
-        f'<div style="color:#39ff14 !important; font-size:28px; font-weight:800; margin-top:10px; margin-bottom:2px;">{label}</div>',
-        unsafe_allow_html=True,
-    )
+    # Titel als span (geen h-tag) + class => CSS wint
+    st.markdown(f'<div class="neon-title"><span>{label}</span></div>', unsafe_allow_html=True)
 
-    # Enkel datum zichtbaar
     file_date = payload.get("file_date")
     df = payload.get("df")
 
@@ -233,7 +238,6 @@ def render_section(label: str, payload: dict, personeelnummer_query: str):
         st.divider()
         return
 
-    # Filter enkel op personeelnummer (exact)
     pn = df["personeelnummer"].fillna("").astype(str)
     results = df[pn == personeelnummer_query].copy()
 
@@ -247,7 +251,6 @@ def render_section(label: str, payload: dict, personeelnummer_query: str):
 
     st.success(f"Gevonden: {len(results)} rij(en) in {label}.")
     st.dataframe(results, use_container_width=True, hide_index=True)
-
     st.divider()
 
 
@@ -256,7 +259,6 @@ def main():
 
     st.title("Opzoeken voertuig chauffeur")
 
-    # Kleine tekst (10px)
     st.markdown(
         '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
         unsafe_allow_html=True,
@@ -278,10 +280,7 @@ def main():
         data = load_excels_via_ftp_three_days()
 
         st.subheader("Zoeken")
-        q = st.text_input(
-            "Personeelnummer (exact)",
-            placeholder="bv. 38529",
-        )
+        q = st.text_input("Personeelnummer (exact)", placeholder="bv. 38529")
 
         if not q.strip():
             st.info("Geef een personeelnummer in om resultaten te tonen (gisteren/vandaag/morgen).")
