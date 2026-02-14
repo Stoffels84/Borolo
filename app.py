@@ -291,7 +291,7 @@ def inject_css():
             border-radius: 999px;
             border: 1px solid rgba(255,255,255,0.12);
             background: rgba(255,255,255,0.03);
-            font-size: 14px; /* ✅ 2px groter (was 12px) */
+            font-size: 14px;
             line-height: 1;
           }
           .pill b { font-weight: 800; }
@@ -362,7 +362,14 @@ def render_results_cards(df: pd.DataFrame, max_cols: int, default_expand: bool):
             st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_section(label: str, payload: dict, personeelnummer_query: str, show_table: bool, max_cols: int, expand_first: bool):
+def render_section(
+    label: str,
+    payload: dict,
+    personeelnummer_query: str,
+    show_table: bool,
+    max_cols: int,
+    expand_first: bool
+):
     st.markdown(f'<div class="neon-title"><span>{label}</span></div>', unsafe_allow_html=True)
 
     file_date = payload.get("file_date")
@@ -375,7 +382,10 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
         )
 
     if df is None:
-        st.markdown(f'<div class="small-muted">Geen bestand gevonden voor {label.lower()}.</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="small-muted">Geen bestand gevonden voor {label.lower()}.</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     if personeelnummer_query in df.index:
@@ -383,9 +393,10 @@ def render_section(label: str, payload: dict, personeelnummer_query: str, show_t
     else:
         results = df.iloc[0:0].copy()
 
+    # ✅ Tekst vervangen zoals gevraagd
     if results.empty:
         st.markdown(
-            f'<div class="small-muted">Geen rijen gevonden voor personeelnummer <b>{personeelnummer_query}</b> in {label.lower()}.</div>',
+            '<div class="small-muted">Er is geen dienst terug te vinden voor u</div>',
             unsafe_allow_html=True,
         )
         return
@@ -442,11 +453,14 @@ def main():
     try:
         payload = load_excels_via_ftp_three_days()
         data = payload["data"]
-        # loaded_at = payload["loaded_at"]  # ✅ verwijderd uit UI (screenshot 2)
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Zoeken")
-        q = st.text_input("Personeelnummer (exact)", placeholder="bv. 38529", label_visibility="collapsed")
+        q = st.text_input(
+            "Personeelnummer (exact)",
+            placeholder="bv. 38529",
+            label_visibility="collapsed",
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not q.strip():
@@ -466,12 +480,13 @@ def main():
             label_visibility="collapsed",
         )
 
+        # (mag blijven) scheidingslijn tussen keuze en resultaten
         st.divider()
 
+        # ✅ divider tussen gisteren/vandaag/morgen verwijderd bij "Alles"
         if day == "Alles":
             for label in ["Gisteren", "Vandaag", "Morgen"]:
                 render_section(label, data[label], q_norm, show_table, max_cols, expand_first)
-                st.divider()
         else:
             render_section(day, data[day], q_norm, show_table, max_cols, expand_first)
 
