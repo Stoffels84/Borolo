@@ -261,9 +261,9 @@ def inject_css():
     st.markdown(
         """
         <style>
-          .small-note { font-size: 12px !important; line-height: 1.25; opacity: 0.9; }
-          .small-muted { font-size: 12px !important; line-height: 1.25; opacity: 0.75; }
-          .small-date { font-size: 12px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
+          .small-note { font-size: 14px !important; line-height: 1.25; opacity: 0.9; }
+          .small-muted { font-size: 14px !important; line-height: 1.25; opacity: 0.75; }
+          .small-date { font-size: 14px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
 
           div[data-testid="stMarkdownContainer"] .neon-title,
           div[data-testid="stMarkdownContainer"] .neon-title * { color: #39ff14 !important; }
