@@ -255,7 +255,7 @@ def load_excels_via_ftp_three_days() -> dict:
 
 
 # ---------------------------
-# UI rendering (stap 1 + 3)
+# UI rendering
 # ---------------------------
 def inject_css():
     st.markdown(
@@ -286,25 +286,17 @@ def inject_css():
           }
           .kv { display:flex; gap:10px; flex-wrap:wrap; margin-top: 6px; }
           .pill {
-            display:inline-block; padding:6px 10px;
+            display:inline-block;
+            padding:6px 10px;
             border-radius: 999px;
             border: 1px solid rgba(255,255,255,0.12);
             background: rgba(255,255,255,0.03);
-            font-size: 12px; line-height: 1;
+            font-size: 14px; /* ✅ 2px groter (was 12px) */
+            line-height: 1;
           }
           .pill b { font-weight: 800; }
 
           div[data-testid="stDataFrame"] { border-radius: 14px; overflow: hidden; }
-
-          /* Pro countdown styling */
-          .cachebar {
-            font-size: 12px;
-            opacity: 0.9;
-            margin-top: 4px;
-            margin-bottom: 8px;
-          }
-          .cachebar b { font-weight: 800; }
-          .cachebar .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
           @media (max-width: 700px) {
             .block-container { padding-top: .8rem; padding-bottom: .8rem; padding-left: .7rem; padding-right: .7rem; }
@@ -313,62 +305,6 @@ def inject_css():
             .neon-title { font-size: 22px !important; }
           }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def inject_pro_countdown_js(loaded_at: datetime):
-    """
-    ✅ Pro countdown:
-    - Geen Streamlit reruns
-    - Geen autorefresh dependency
-    - Pure JS timer in de browser
-    """
-    loaded_ms = int(loaded_at.timestamp() * 1000)
-    ttl_ms = int(CACHE_TTL_SECONDS * 1000)
-
-    st.markdown(
-        f"""
-        <div class="cachebar" id="cachebar">
-          🕒 Laatst geladen: <b class="mono" id="loaded_at">--:--</b>
-          &nbsp;·&nbsp; Cache TTL: <b>{CACHE_TTL_SECONDS//60} min</b>
-          &nbsp;·&nbsp; Vervalt over: <b class="mono" id="remain">--:--</b>
-        </div>
-
-        <script>
-          (function() {{
-            const loadedMs = {loaded_ms};
-            const ttlMs = {ttl_ms};
-
-            function pad(n) {{
-              return String(n).padStart(2, "0");
-            }}
-
-            function fmtHM(ms) {{
-              const d = new Date(ms);
-              return pad(d.getHours()) + ":" + pad(d.getMinutes());
-            }}
-
-            function tick() {{
-              const now = Date.now();
-              const age = now - loadedMs;
-              const remaining = Math.max(0, ttlMs - age);
-
-              const mm = Math.floor(remaining / 60000);
-              const ss = Math.floor((remaining % 60000) / 1000);
-
-              const loadedEl = window.parent.document.getElementById("loaded_at");
-              const remainEl = window.parent.document.getElementById("remain");
-
-              if (loadedEl) loadedEl.textContent = fmtHM(loadedMs);
-              if (remainEl) remainEl.textContent = pad(mm) + ":" + pad(ss);
-            }}
-
-            tick();
-            setInterval(tick, 1000);
-          }})();
-        </script>
         """,
         unsafe_allow_html=True,
     )
@@ -506,10 +442,7 @@ def main():
     try:
         payload = load_excels_via_ftp_three_days()
         data = payload["data"]
-        loaded_at = payload["loaded_at"]
-
-        # ✅ Pro countdown: 0 reruns, 0 FTP impact
-        inject_pro_countdown_js(loaded_at)
+        # loaded_at = payload["loaded_at"]  # ✅ verwijderd uit UI (screenshot 2)
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Zoeken")
