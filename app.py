@@ -202,13 +202,6 @@ def inject_css():
           .small-note { font-size: 10px; line-height: 1.2; opacity: 0.9; }
           .small-muted { font-size: 10px; line-height: 1.2; opacity: 0.75; }
           .small-date { font-size: 10px; line-height: 1.2; opacity: 0.85; margin-top: -6px; }
-
-          /* Fluo groene sectietitels */
-          .neon-title {
-            color: #39ff14;
-            font-weight: 800;
-            margin-bottom: 0.25rem;
-          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -216,10 +209,13 @@ def inject_css():
 
 
 def render_section(label: str, payload: dict, personeelnummer_query: str):
-    # Fluo groene titel
-    st.markdown(f'<h2 class="neon-title">{label}</h2>', unsafe_allow_html=True)
+    # Fluo groene titel (INLINE + !important => wint van Streamlit theme)
+    st.markdown(
+        f'<div style="color:#39ff14 !important; font-size:28px; font-weight:800; margin-top:10px; margin-bottom:2px;">{label}</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Enkel datum zichtbaar (bestandsnaam/metrics verbergen)
+    # Enkel datum zichtbaar
     file_date = payload.get("file_date")
     df = payload.get("df")
 
@@ -260,7 +256,7 @@ def main():
 
     st.title("Opzoeken voertuig chauffeur")
 
-    # Kleine tekst (10px) zoals gevraagd
+    # Kleine tekst (10px)
     st.markdown(
         '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
         unsafe_allow_html=True,
