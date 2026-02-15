@@ -359,7 +359,7 @@ def main():
 
     st.title("Opzoeken voertuig chauffeur")
     st.markdown(
-        '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17</div>',
+        '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17, dit is geen vervanging voor Selfservice</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
