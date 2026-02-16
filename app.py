@@ -367,14 +367,10 @@ def main():
         unsafe_allow_html=True,
     )
 
-    with st.expander("⚙️ Instellingen", expanded=False):
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c1:
-            refresh = st.button("🔄 Herladen (cache leegmaken)")
-        with c2:
-            show_table = st.toggle("Toon tabel", value=default_show_table)
-        with c3:
-            st.caption(f"Viewport: {width}px" if width else "Viewport: onbekend")
+# Alleen de herlaadknop (geen instellingen-venster meer)
+refresh = st.button("🔄 Herladen (cache leegmaken)")
+show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
+
 
     if refresh:
         st.cache_data.clear()
