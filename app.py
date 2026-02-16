@@ -367,9 +367,9 @@ def main():
         unsafe_allow_html=True,
     )
 
-# Alleen de herlaadknop (geen instellingen-venster meer)
-refresh = st.button("🔄 Herladen (cache leegmaken)")
-show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
+    # Alleen de herlaadknop (geen instellingen-venster meer)
+    refresh = st.button("🔄 Herladen (cache leegmaken)")
+    show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
 
 
     if refresh:
