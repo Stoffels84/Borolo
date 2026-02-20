@@ -206,7 +206,7 @@ def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
 
 
 # ---------------------------
-# FTP loader (3 dagen)
+# FTP loader (2 dagen: gisteren + vandaag)
 # ---------------------------
 @st.cache_data(ttl=CACHE_TTL_SECONDS)
 def load_excels_via_ftp_three_days() -> dict:
@@ -219,7 +219,6 @@ def load_excels_via_ftp_three_days() -> dict:
     targets = {
         "Gisteren": today - timedelta(days=1),
         "Vandaag": today,
-        "Morgen": today + timedelta(days=1),
     }
 
     ftp = FTP()
@@ -371,7 +370,6 @@ def main():
     refresh = st.button("🔄 Herladen (cache leegmaken)")
     show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
 
-
     if refresh:
         st.cache_data.clear()
         st.rerun()
@@ -382,16 +380,20 @@ def main():
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Zoeken")
-        q = st.text_input("Personeelnummer (exact)", placeholder="bv. 38529", label_visibility="collapsed")
+        q = st.text_input(
+            "Personeelnummer (exact)",
+            placeholder="bv. 38529",
+            label_visibility="collapsed",
+        )
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not q.strip():
-            st.info("Geef een personeelnummer in om resultaten te tonen (gisteren/vandaag/morgen).")
+            st.info("Geef een personeelnummer in om resultaten te tonen (gisteren/vandaag).")
             st.stop()
 
         q_norm = clean_query(q)
 
-        options = ["Vandaag", "Gisteren", "Morgen", "Alles"]
+        options = ["Vandaag", "Gisteren", "Alles"]
         idx = options.index(default_day) if default_day in options else 0
 
         day = st.radio(
@@ -404,9 +406,9 @@ def main():
 
         st.divider()
 
-        # ✅ geen divider meer tussen gisteren/vandaag/morgen bij "Alles"
+        # ✅ geen divider meer tussen gisteren/vandaag bij "Alles"
         if day == "Alles":
-            for label in ["Gisteren", "Vandaag", "Morgen"]:
+            for label in ["Gisteren", "Vandaag"]:
                 render_section(label, data[label], q_norm, show_table, max_cols=10, expand_first=False)
         else:
             render_section(day, data[day], q_norm, show_table, max_cols=10, expand_first=False)
