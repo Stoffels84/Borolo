@@ -209,7 +209,7 @@ def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
 # FTP loader (2 dagen: gisteren + vandaag)
 # ---------------------------
 @st.cache_data(ttl=CACHE_TTL_SECONDS)
-def load_excels_via_ftp_three_days() -> dict:
+def load_excels_via_ftp_two_days() -> dict:
     host = st.secrets["FTP_HOST"]
     port = int(st.secrets.get("FTP_PORT", 21))
     user = st.secrets["FTP_USER"]
@@ -316,7 +316,6 @@ def render_section(
     df = payload.get("df")
 
     if file_date:
-        # ✅ dagnaam + dd/mm/yyyy
         st.markdown(
             f'<div class="small-date">Datum: {format_date_ddmmyyyy_with_day(file_date)}</div>',
             unsafe_allow_html=True,
@@ -343,7 +342,6 @@ def render_section(
 
     st.success(f"Gevonden: {len(results)} rij(en) in {label}.")
 
-    # (simpel) tabelweergave
     st.dataframe(results.reset_index(drop=True), use_container_width=True, hide_index=True)
 
 
@@ -353,7 +351,6 @@ def main():
     width = get_viewport_width()
     small = is_small_screen(width, breakpoint=700)
 
-    default_day = "Vandaag" if small else "Alles"
     default_show_table = False if small else True
 
     st.title("Opzoeken voertuig chauffeur")
@@ -375,7 +372,7 @@ def main():
         st.rerun()
 
     try:
-        payload = load_excels_via_ftp_three_days()
+        payload = load_excels_via_ftp_two_days()
         data = payload["data"]
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -393,25 +390,18 @@ def main():
 
         q_norm = clean_query(q)
 
-        options = ["Vandaag", "Gisteren", "Alles"]
-        idx = options.index(default_day) if default_day in options else 0
-
-        day = st.radio(
-            "Kies dag",
-            options=options,
-            index=idx,
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-
         st.divider()
 
-        # ✅ geen divider meer tussen gisteren/vandaag bij "Alles"
-        if day == "Alles":
-            for label in ["Gisteren", "Vandaag"]:
-                render_section(label, data[label], q_norm, show_table, max_cols=10, expand_first=False)
-        else:
-            render_section(day, data[day], q_norm, show_table, max_cols=10, expand_first=False)
+        # Altijd tonen: gisteren + vandaag (geen keuze meer)
+        for label in ["Gisteren", "Vandaag"]:
+            render_section(
+                label,
+                data[label],
+                q_norm,
+                show_table,
+                max_cols=10,
+                expand_first=False,
+            )
 
     except Exception as e:
         st.error(f"FTP inlezen mislukt: {e}")
