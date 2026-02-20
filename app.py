@@ -354,16 +354,8 @@ def main():
     default_show_table = False if small else True
 
     st.title("Opzoeken voertuig chauffeur")
-    st.markdown(
-        '<div class="small-note">Deze app bevat mogelijk fouten door last minute wijzigingen - controleer zeker de uitrijlijst op GBR of E17, dit is geen vervanging voor Selfservice</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="small-note">Voertuigen worden pas in de loop van de nacht ingeladen voor de huidige dag.</div>',
-        unsafe_allow_html=True,
-    )
 
-    # Alleen de herlaadknop (geen instellingen-venster meer)
+    # Alleen de herlaadknop
     refresh = st.button("🔄 Herladen (cache leegmaken)")
     show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
 
@@ -385,14 +377,13 @@ def main():
         st.markdown("</div>", unsafe_allow_html=True)
 
         if not q.strip():
-            st.info("Geef een personeelnummer in om resultaten te tonen (gisteren/vandaag).")
             st.stop()
 
         q_norm = clean_query(q)
 
         st.divider()
 
-        # Altijd tonen: gisteren + vandaag (geen keuze meer)
+        # Altijd tonen: gisteren + vandaag
         for label in ["Gisteren", "Vandaag"]:
             render_section(
                 label,
