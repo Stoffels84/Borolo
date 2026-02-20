@@ -206,7 +206,7 @@ def is_small_screen(width: int | None, breakpoint: int = 700) -> bool:
 
 
 # ---------------------------
-# FTP loader (2 dagen: gisteren + vandaag)
+# FTP loader (2 dagen: vandaag + gisteren)
 # ---------------------------
 @st.cache_data(ttl=CACHE_TTL_SECONDS)
 def load_excels_via_ftp_two_days() -> dict:
@@ -217,8 +217,8 @@ def load_excels_via_ftp_two_days() -> dict:
 
     today = belgium_today()
     targets = {
-        "Gisteren": today - timedelta(days=1),
         "Vandaag": today,
+        "Gisteren": today - timedelta(days=1),
     }
 
     ftp = FTP()
@@ -265,7 +265,7 @@ def inject_css():
         """
         <style>
           .small-note { font-size: 12px !important; line-height: 1.25; opacity: 0.9; }
-          .small-muted { font-size: 14px !important; line-height: 1.25; opacity: 0.75; } /* ✅ 2px groter */
+          .small-muted { font-size: 14px !important; line-height: 1.25; opacity: 0.75; }
           .small-date { font-size: 12px !important; line-height: 1.25; opacity: 0.85; margin-top: -6px; }
 
           div[data-testid="stMarkdownContainer"] .neon-title,
@@ -310,7 +310,10 @@ def render_section(
     max_cols: int,
     expand_first: bool,
 ):
-    st.markdown(f'<div class="neon-title"><span>{label}</span></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="neon-title"><span>{label}</span></div>',
+        unsafe_allow_html=True,
+    )
 
     file_date = payload.get("file_date")
     df = payload.get("df")
@@ -357,7 +360,7 @@ def main():
 
     # Alleen de herlaadknop
     refresh = st.button("🔄 Herladen (cache leegmaken)")
-    show_table = default_show_table  # of gewoon True/False als je het vast wil zetten
+    show_table = default_show_table
 
     if refresh:
         st.cache_data.clear()
@@ -383,8 +386,8 @@ def main():
 
         st.divider()
 
-        # Altijd tonen: gisteren + vandaag
-        for label in ["Gisteren", "Vandaag"]:
+        # ✅ Altijd tonen: vandaag eerst, daarna gisteren
+        for label in ["Vandaag", "Gisteren"]:
             render_section(
                 label,
                 data[label],
