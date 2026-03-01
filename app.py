@@ -1,31 +1,34 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from urllib.parse import urlencode
 
-NEW_BASE_URL = "https://opzoeken-voertuig.vercel.app/"
+TARGET_BASE = "https://opzoeken-voertuig.vercel.app/"
 
-# Optioneel: kleine melding (wordt meestal maar héél kort zichtbaar)
 st.set_page_config(page_title="Doorsturen…", layout="centered")
+
+# Neem query params mee (werkt ook op oudere Streamlit-versies)
+try:
+    params = st.query_params  # nieuw
+except Exception:
+    params = st.experimental_get_query_params()  # oud
+
+# params kan dict zijn met lists -> urlencode met doseq
+qs = urlencode(params, doseq=True) if params else ""
+target_url = f"{TARGET_BASE}?{qs}" if qs else TARGET_BASE
+
+# Toon iets voor de gebruiker + fallback knop
 st.write("Je wordt doorgestuurd naar de nieuwe website…")
+st.link_button("Klik hier als het niet automatisch werkt", target_url)
 
-# Neem bestaande query parameters mee (bv. ?id=123)
-params = dict(st.query_params)  # Streamlit >= 1.30
-qs = urlencode(params, doseq=True)
-
-target_url = f"{NEW_BASE_URL}?{qs}" if qs else NEW_BASE_URL
-
-# Client-side redirect
-components.html(
+# Redirect in de TOP pagina (niet in een iframe)
+st.markdown(
     f"""
+    <meta http-equiv="refresh" content="0; url={target_url}">
     <script>
-      window.location.replace("{target_url}");
+      // Probeer top-level redirect
+      window.top.location.href = "{target_url}";
     </script>
-    <noscript>
-      <meta http-equiv="refresh" content="0; url={target_url}">
-    </noscript>
     """,
-    height=0,
+    unsafe_allow_html=True,
 )
 
-# Stop verdere rendering
 st.stop()
