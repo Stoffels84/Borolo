@@ -12,7 +12,7 @@ components.html(
       window.location.replace("https://opzoeken-voertuig.vercel.app/");
     </script>
     <noscript>
-      <meta http-equiv="refresh" content="0; url={https://opzoeken-voertuig.vercel.app/}">
+      <meta http-equiv="refresh" content="0; url=https://opzoeken-voertuig.vercel.app">
     </noscript>
     """,
     height=0,
